@@ -2,6 +2,7 @@
 from envs.asrs_env import ASRSEnv
 from collections.abc import Iterable
 import scipy.sparse as sparse
+import itertools
 
 class ExpandStateWrapper(object):
     """
@@ -35,6 +36,13 @@ class ExpandStateWrapper(object):
         self.map_history = sparse.csr_matrix(np.zeros((self.max_distance,self.num_products))) 
         self.outstanding_order = np.zeros(self.num_products).astype(int)
         self.completed_order_mask = self.get_compelted_order_mask()
+        self.step()
+        all_permutations = list(itertools.permutations(range(self.num_products)))
+        self.id_to_map_dict = dict(zip(range(len(all_permutations)),all_permutations))
+        self.map_to_id_dict = dict(zip(all_permutations,range(len(all_permutations))))
+        all_actions = list(itertools.permutations(range(self.num_products),2))+[None]
+        self.id_to_action_dict = dict(zip(range(len(all_actions)),all_actions))
+
         # self._states = self._wrapped_env._storage_maps
 
     def get_compelted_order_mask(self):
@@ -71,65 +79,29 @@ class ExpandStateWrapper(object):
         storage_maps = self._wrapped_env.vec_reset(num_envs)
         pass
 
-    def get_state_from_id(self, id_s):
+    def get_map_from_id(self, id_m):
         """
-        Get continuous state from id
-        :param id_s:
-        :return:
+        Get map configuration from id
+        :param id_m:
+        :return: map_storage
         """
-        if self._disc_state:
-            return id_s
-        else:
-            vec = self.get_coordinates_from_id(id_s)
-            return self.state_points[range(self.obs_dims), vec]
+        return self.id_to_map_dict[id_m]
+
+    def get_id_from_map(self, map_storage):
+        """
+        Get id of the map configuration
+        :param map_storage:
+        :return: id_m
+        """
+        return self.map_id_dict[map_storage]
 
     def get_action_from_id(self, id_a):
         """
-        Get continous action from id
+        Get action from id
         :param id_a:
         :return:
         """
-        if self._disc_act:
-            return id_a
-        else:
-            vec = self.get_coordinates_from_id(id_a, state=False)
-            return self.act_points[range(self.act_dims), vec]
-
-    def get_coordinates_from_id(self, idx, state=True, base=None):
-        """
-        Get position in the grid from id
-        :param idx:
-        :param state:
-        :param base:
-        :return:
-        """
-        size = self.obs_dims if state else self.act_dims
-        if isinstance(idx, Iterable): # probably if it's iterable
-            vec = np.zeros((len(idx), size))
-        else:
-            vec = np.zeros((size,), dtype=np.int)
-
-        num, i,  = idx, 0
-        if base is None:
-            base = self._state_bins_per_dim if state else self._act_bins_per_dim
-        else:
-            assert type(base) == int
-            base = np.ones((size,), dtype=np.int) * base
-        for i in range(size):
-            vec[..., i] = num % base[i]
-            num = num//base[i]
-            i += 1
-        return vec.astype(np.int)
-
-    def get_id_from_coordinates(self, vec, state=True):
-        """
-        Get id from position in the grid
-        :param vec:
-        :param state:
-        :return:
-        """
-        base_transf = self._state_base_transf if state else self._act_base_transf
-        return np.squeeze(np.sum(vec * base_transf, axis=-1).astype(int))
+        return self.id_to_action_dict[id_a]
 
     def __getattr__(self, attr):
         """
