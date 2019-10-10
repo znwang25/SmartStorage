@@ -13,15 +13,19 @@ class ASRSEnv(gym.Env):
     A robot can exchange the positions of two bins. The goal is to find the optimal storage plan to make best fullfil the orders.
 
     Observation:
-        Type: 
-        Num	Observation               
-        0	Current Storage Map    np.array()   (M,)     
-        1	Current Period Order   np.array()    (M,)
+        Current Storage Map    np.array()   (M,)     
+                row number indicates the bin number, the value indicates the the good number being stored in the bin.
+                Good number starts from 1.
+        Current Period Order   np.array()   (M,)
+    State:
+        Current Storage Map    np.array()   (M,)     
+        Time to receive next order  np.array()   (M,)   
+        Current 
 
     Actions:
-        Type:
-        Num	of Action: M Choose 2
-        e.g  (a , b) switch bin a with bin b
+        Num	of Action: M Choose 2 + 1
+        e.g  (a , b) switch bin a with bin b 
+             or do nothing
 
     Reward:
         Reward is -1 for every step taken
@@ -35,19 +39,22 @@ class ASRSEnv(gym.Env):
         'video.frames_per_second': 50
     }
 
-    def __init__(self, num_products,dist_param):
+    def __init__(self, storage_shape, dist_param = None):
         self.seed()
-        self.num_products = num_products
-        self.dist_param = np.array(dist_param)
-        self.distribution = np.random.exponential
-        self.time_to_next = np.zeros(num_products)
-        self.viewer = None
-        storage_map = np.random.permutation(num_products)
-        order = np.zeros(num_products)
-        self.state = np.concatenate([storage_map,order])
-        self._states = None
+        self.storage_shape = storage_shape
+        self.num_products = np.array(storage_shape).prod()
+        self.storage_map = np.random.permutation(self.num_products) + 1
+        self.dist_origin_to_exit = 1 # Distance from (0,0,0) to exit
+        self._storage_maps = None
         self._num_envs = None
+        
+        if dist_param == None: 
+            self.dist_param = np.array([0.05]*self.num_products)
+        else:
+            self.dist_param = np.array(dist_param)
+        self.max_distance = (np.array(storage_shape)-1).sum()+self.dist_origin_to_exit
 
+        self.viewer = None
         self.steps_beyond_done = None
         self.vectorized = True
 
@@ -55,69 +62,62 @@ class ASRSEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def step(self, action=None):
-        # assert self.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
-        storage_map = self.state[:self.num_products]
+    def get_bin_coordinate(self,bin_id):
+        '''
+        Given a bin number, this gives the location of the bin. This can be useful to to calculate distance between bin to exit.
+        '''
+        a,b,c = self.storage_shape
+        x, y, z = bin_id//(b*c),  bin_id%(b*c)//c, bin_id%c
+        return x, y, z
+    
+    def get_distance_to_exit(self,bin_id = None):
+        if bin_id is None:
+            return np.vstack(self.get_bin_coordinate(np.arange(self.num_products))).sum(axis=0)+self.dist_origin_to_exit
+        else:
+            return sum(self.get_bin_coordinate(bin_id)) + self.dist_origin_to_exit
+    
 
-        arrived = self.time_to_next<1
-        order = arrived
-        self.time_to_next = self.time_to_next-1
-        if arrived.any():
-            self.time_to_next[arrived] = self.distribution(self.dist_param[arrived])
-        if action is not None:
-            storage_map[action] = storage_map[[action[1], action[0]]]
-        self.state = np.concatenate([storage_map,order])
-        reward = -1.0
-        return np.array(self.state).copy(), reward
+    def set_storage_map(self, storage_map):
+        self.storage_map = storage_map
+
+    def reset(self):
+        self._storage_maps = None
+        self.storage_map = np.random.permutation(self.num_products)
+        self.steps_beyond_done = None
+        return np.array(self.storage_map)
+
+    def get_orders(self, num_envs=1):
+        if num_envs == 1:
+            order = (np.random.uniform(size=self.num_products) < self.dist_param).astype(int)
+        else:
+            order = (np.random.uniform(size=(num_envs,self.num_products)) < self.dist_param).astype(int)
+        return order
+
+    def step(self, action=None):
+        '''
+        Action should be a tuple (x, y), which indicates that bin number x and bin number y should switch good.
+        '''
+        # assert self.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
+        storage_map = self.storage_map
+        cost = 0
+        order = self.get_orders()
+        if (action is not None) and (action[1]!=action[0]):
+            storage_map[action[0]], storage_map[action[1]] = storage_map[action[1]], storage_map[action[0]]
+            cost +=np.abs(np.array(self.get_bin_coordinate(action[0]))-np.array(self.get_bin_coordinate(action[1]))).sum()
+        self.storage_map = storage_map
+        return np.array(self.storage_map).copy(), order, cost
 
     def vec_step(self, actions):
         # assert list(map(self.action_space.contains, actions)).all()
-        assert self._states is not None
-        state = self._states
-        x, x_dot, theta, theta_dot = state.T
-        force = (2 * actions - 1) * self.force_mag
-        costheta = np.cos(theta)
-        sintheta = np.sin(theta)
-        temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
-        thetaacc = (self.gravity * sintheta - costheta * temp) / (
-                self.length * (4.0 / 3.0 - self.masspole * costheta * costheta / self.total_mass))
-        xacc = temp - self.polemass_length * thetaacc * costheta / self.total_mass
-        if self.kinematics_integrator == 'euler':
-            x = x + self.tau * x_dot
-            x_dot = x_dot + self.tau * xacc
-            theta = theta + self.tau * theta_dot
-            theta_dot = theta_dot + self.tau * thetaacc
-        else:  # semi-implicit euler
-            x_dot = x_dot + self.tau * xacc
-            x = x + self.tau * x_dot
-            theta_dot = theta_dot + self.tau * thetaacc
-            theta = theta + self.tau * theta_dot
-        self._states = np.stack([x, x_dot, theta, theta_dot], axis=-1)
-        dones = (x < -self.x_threshold) \
-               + (x > self.x_threshold) \
-               + (theta < -self.theta_threshold_radians) \
-               + (theta > self.theta_threshold_radians) \
-               + (x_dot > self.vel_threshold) \
-               + (x_dot < -self.vel_threshold) \
-               + (theta_dot > self.vel_threshold) \
-               + (theta_dot < -self.vel_threshold)
-
-        dones = dones.astype(bool)
-        rewards = np.ones((self._num_envs,))
-        """
-        elif self.steps_beyond_done is None:
-            # Pole just fell!
-            self.steps_beyond_done = 0
-            reward = 1.0
-        else:
-            if self.steps_beyond_done == 0:
-                logger.warn(
-                    "You are calling 'step()' even though this environment has already returned done = True. You should always call 'reset()' once you receive 'done = True' -- any further steps are undefined behavior.")
-            self.steps_beyond_done += 1
-            reward = 0.0
-        """
-
-        return np.array(self._states).copy(), rewards, dones, {}
+        assert self._storage_maps is not None
+        storage_maps = self._storage_maps
+        orders = self.get_orders(num_envs=self._num_envs)
+        rewards = np.zeros((self._num_envs,))
+        for i, action in enumerate(actions):
+            if (action is not None) and (action[1]!=action[0]):
+                self._storage_maps[i,action[0]], self._storage_maps[i, action[1]] = storage_maps[i, action[1]], storage_maps[i, action[0]]
+                rewards[i] += -1
+        return np.array(self._storage_maps).copy(),orders, rewards
 
     def vec_reset(self, num_envs=None):
         if num_envs is None:
@@ -125,25 +125,13 @@ class ASRSEnv(gym.Env):
             num_envs = self._num_envs
         else:
             self._num_envs = num_envs
-        self._states = self.np_random.uniform(low=-0.05, high=0.05, size=(num_envs, 4))
-        return np.array(self._states).copy()
+        self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))
+        return np.array(self._storage_maps).copy()
 
-    def vec_set_state(self, states):
-        self._num_envs = len(states)
-        self._states = states.copy()
 
-    def set_state(self, state):
-        self.state = state
-
-    def reset(self):
-        self._states = None
-        # self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
-        storage_map = np.random.permutation(num_products)
-        order = np.zeros(num_products)
-        self.state = np.concatenate([storage_map,order])
-        self.time_to_next = np.zeros(num_products)
-        self.steps_beyond_done = None
-        return np.array(self.state)
+    def vec_set_storage_map(self, storage_maps):
+        self._num_envs = len(storage_maps)
+        self._storage_maps = storage_maps.copy()
 
     def render(self, mode='human', iteration=None):
         screen_width = 600
