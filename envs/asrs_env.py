@@ -6,8 +6,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from gym.utils import seeding
 import numpy as np
 import time
-import logger
 from PIL import ImageDraw,Image,ImageFont
+import logger
 
 
 class ASRSEnv(gym.Env):
@@ -18,7 +18,7 @@ class ASRSEnv(gym.Env):
     A robot can exchange the positions of two bins. The goal is to find the optimal storage plan to make best fullfil the orders.
 
     Observation:
-        Current Storage Map    np.array()   (M,)     
+        Current Storage Map    np.array()   (M,) any 1d array    
                 row number indicates the bin number, the value indicates the the good number being stored in the bin.
                 Good number starts from 1.
         Current Period Order   np.array()   (M,)
@@ -27,7 +27,7 @@ class ASRSEnv(gym.Env):
         Time to receive next order  np.array()   (M,)   
         Current 
 
-    Actions:
+    Action:
         Num	of Action: M Choose 2 + 1
         e.g  (a , b) switch bin a with bin b 
              or do nothing
@@ -37,17 +37,26 @@ class ASRSEnv(gym.Env):
 
     Starting State:
         A random permutation.
+    
+    Parameter type:
+        storage_shape: tuple with 1 to 3 int  
+        dist_param: list with M numbers in [0, 1] 
     """
 
     metadata = {
         'render.modes': ['human', 'rgb_array'],
-        'video.frames_per_second': 50
+        'video.frames_per_second': 30
     }
 
     def __init__(self, storage_shape, dist_param = None, seed=42):
         self.seed(seed)
+        assert len(storage_shape) <= 3, "storage_shape length should be <= 3"
         self.storage_shape = storage_shape
         self.num_products = np.array(storage_shape).prod()
+
+        self.num_actions = int(self.num_products * (self.num_products - 1) / 2 + 1)
+        self.action_dim = 2
+
         self.reset()
         self.dist_origin_to_exit = 1 # Distance from (0,0,0) to exit
         self._storage_maps = None
@@ -65,19 +74,28 @@ class ASRSEnv(gym.Env):
         self.dt = .2
         self._scale = 16
         self.vectorized = True
-        self.max_path_length = 10
         self.__name__ = 'ASRSEnv'
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
-        return [seed]
+        return seed
 
     def reset(self):
         self._storage_maps = None
         self.storage_map = np.random.permutation(self.num_products)+1
-        self.steps_beyond_done = None
         self.init_plot = self.storage_map.reshape(self.storage_shape) 
         return np.array(self.storage_map).copy()
+
+    def vec_reset(self, num_envs=None):
+        if num_envs is None:
+            assert self._num_envs is not None
+            num_envs = self._num_envs
+        else:
+            self._num_envs = num_envs
+        self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))+1
+        self.storage_map = self._storage_maps[0]
+        self.init_plot = self.storage_map.reshape(self.storage_shape) 
+        return np.array(self._storage_maps).copy()
 
     def get_bin_coordinate(self,bin_id):
         '''
@@ -96,13 +114,9 @@ class ASRSEnv(gym.Env):
     
     def get_distance_to_exit(self,bin_id = None):
         if bin_id is None:
-            return np.vstack(self.get_bin_coordinate(np.arange(self.num_products))).sum(axis=0)+self.dist_origin_to_exit
+            return np.vstack(self.get_bin_coordinate(np.arange(self.num_products))).sum(axis=0) + self.dist_origin_to_exit
         else:
             return sum(self.get_bin_coordinate(bin_id)) + self.dist_origin_to_exit
-    
-
-    def set_storage_map(self, storage_map):
-        self.storage_map = storage_map
 
     def get_orders(self, num_envs=1):
         if num_envs == 1:
@@ -113,39 +127,35 @@ class ASRSEnv(gym.Env):
 
     def step(self, action=None):
         '''
-        Action should be a tuple (x, y), which indicates that bin number x and bin number y should switch good.
+        Action should be a tuple (x, y), which indicates that good in bin number x and bin number y should switch.
         '''
-        # assert self.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
+        assert action is None or (action[0] < action[1] and action[1] < self.num_products and action[0] > -1), f"Invalid action {action}!"
+
         storage_map = self.storage_map
-        cost = 0
+        exchange_cost = 0
         order = self.get_orders()
-        if (action is not None) and (action[1]!=action[0]):
+        if (action is not None):
             storage_map[action[0]], storage_map[action[1]] = storage_map[action[1]], storage_map[action[0]]
-            cost +=np.abs(np.array(self.get_bin_coordinate(action[0]))-np.array(self.get_bin_coordinate(action[1]))).sum()
+            exchange_cost +=np.abs(np.array(self.get_bin_coordinate(action[0]))-np.array(self.get_bin_coordinate(action[1]))).sum()
         self.storage_map = storage_map
-        return np.array(self.storage_map).copy(), order, cost
+        return self.storage_map.copy(), order, exchange_cost
+
 
     def vec_step(self, actions):
-        # assert list(map(self.action_space.contains, actions)).all()
+        # actions is a list of length n either 2-tuple or None
+        assert np.array(list(map((lambda action: action is None or (action[0] < action[1] and action[1] < self.num_products and action[0] > -1)), actions))).all()
         assert self._storage_maps is not None
-        storage_maps = self._storage_maps
+        range_n = np.arange(self._num_envs)
+        actions = np.array([action if action is not None else (0, 0) for action in actions])
+        self._storage_maps[range_n, actions[:,0]], self._storage_maps[range_n, actions[:,1]] =\
+             self._storage_maps[range_n, actions[:,1]], self._storage_maps[range_n, actions[:,0]] 
         orders = self.get_orders(num_envs=self._num_envs)
-        costs = np.zeros((self._num_envs,))
-        for i, action in enumerate(actions):
-            if (action is not None) and (action[1]!=action[0]):
-                self._storage_maps[i,action[0]], self._storage_maps[i, action[1]] = storage_maps[i, action[1]], storage_maps[i, action[0]]
-                costs[i] += -1
-        return np.array(self._storage_maps).copy(),orders, costs
+        exchange_costs = np.abs(np.array(self.get_bin_coordinate(actions[:,0]))-np.array(self.get_bin_coordinate(actions[:,1]))).sum(axis=0)
+        self.storage_map = self._storage_maps[0]
+        return np.array(self._storage_maps).copy(),orders, exchange_costs
 
-    def vec_reset(self, num_envs=None):
-        if num_envs is None:
-            assert self._num_envs is not None
-            num_envs = self._num_envs
-        else:
-            self._num_envs = num_envs
-        self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))+1
-        return np.array(self._storage_maps).copy()
-
+    def set_storage_map(self, storage_map):
+        self.storage_map = storage_map.copy()
 
     def vec_set_storage_map(self, storage_maps):
         self._num_envs = len(storage_maps)
@@ -155,13 +165,6 @@ class ASRSEnv(gym.Env):
         if self._fig is None:
             self._fig = plt.figure()
             self._ax = self._fig.add_subplot(111)
-            data = self.upsample(self.dist_param[self.init_plot-1],self._scale) 
-            data = self.cmap(data)
-            for ix,iy in np.ndindex(self.init_plot.shape[:2]):
-                number = self.init_plot[ix,iy]
-                self.add_numbers_on_plot(number,data[ix*16:(ix+1)*16,iy*16:(iy+1)*16,:3])
-            
-            self._render = self._ax.imshow(data,animated=True)
             self._ax.tick_params(
                 axis='both',
                 bottom=False,
@@ -178,7 +181,8 @@ class ASRSEnv(gym.Env):
         for ix,iy in np.ndindex(self.init_plot.shape):
                 number = current_map[ix,iy]
                 self.add_numbers_on_plot(number,data[ix*16:(ix+1)*16,iy*16:(iy+1)*16,:3])
-        self._render.set_data(data)
+        self._render = self._ax.imshow(data,animated=True)
+        # self._render.set_data(data)
         if iteration is not None:
             self._ax.set_title('Iteration %d' % iteration)
         self._canvas.draw()
