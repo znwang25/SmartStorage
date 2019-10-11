@@ -6,6 +6,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from gym.utils import seeding
 import numpy as np
 import time
+import logger
 from PIL import ImageDraw,Image,ImageFont
 
 
@@ -105,9 +106,9 @@ class ASRSEnv(gym.Env):
 
     def get_orders(self, num_envs=1):
         if num_envs == 1:
-            order = (np.random.uniform(size=self.num_products) < self.dist_param).astype(int)
+            order = np.random.binomial(1, self.dist_param)
         else:
-            order = (np.random.uniform(size=(num_envs,self.num_products)) < self.dist_param).astype(int)
+            order = np.random.binomial(1, np.repeat(self.dist_param, num_envs).reshape((self.num_products, num_envs))).T
         return order
 
     def step(self, action=None):

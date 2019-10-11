@@ -280,10 +280,10 @@ class Logger(object):
                     # So that you can still log to the terminal without setting up any output files
     CURRENT = None  # Current logger being used by the free functions above
 
-    def __init__(self, dir, output_formats, snapshot_mode='last', snapshot_gap=1):
+    def __init__(self, dir, output_formats, snapshot_mode='last', snapshot_gap=1, level=INFO):
         self.name2val = defaultdict(float)  # values this iteration
         self.name2cnt = defaultdict(int)
-        self.level = INFO
+        self.level = level
         self.dir = dir
         self.output_formats = output_formats
         self.snapshot_mode = snapshot_mode
@@ -358,7 +358,7 @@ class Logger(object):
 Logger.DEFAULT = Logger.CURRENT = Logger(dir=None, output_formats=[HumanOutputFormat(sys.stdout)])
 
 
-def configure(dir=None, format_strs=None, snapshot_mode='last', snapshot_gap=1):
+def configure(dir=None, format_strs=None, snapshot_mode='last', snapshot_gap=1, level=INFO):
     if dir is None:
         dir = os.getenv('OPENAI_LOGDIR')
     if dir is None:
@@ -384,7 +384,7 @@ def configure(dir=None, format_strs=None, snapshot_mode='last', snapshot_gap=1):
 
     output_formats = [make_output_format(f, dir, log_suffix) for f in format_strs]
 
-    Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, snapshot_mode=snapshot_mode, snapshot_gap=snapshot_gap)
+    Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, snapshot_mode=snapshot_mode, snapshot_gap=snapshot_gap, level=level)
     log('Logging to %s' % dir)
 
 
