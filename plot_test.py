@@ -8,7 +8,7 @@ contours = []
 returns = []
 fig = None
 itr = 0
-env = ASRSEnv((2,3))
+env = ASRSEnv((2,3),dist_param = [0.01, 0.2, 0.4, 0.5, 0.7, 0.9])
 policy = RandomPolicy(env)
 
 average_return, video = rollout(env, policy, render=True,

@@ -22,9 +22,9 @@ def plot_contour(env, value_fun, save=False, fig=None, iteration=None):
     ax = fig.axes[0]
     if not hasattr(env, '_wrapped_env'):
         if isinstance(env.observation_space, spaces.Discrete):
-            if env.obs_dims == 2:
+            if env.obs_dim == 2:
                 V = value_fun.get_values()[:-1].reshape(env._size, env._size)
-            elif env.obs_dims == 1:
+            elif env.obs_dim == 1:
                 V = value_fun.get_values()[:-1].reshape(env._size, 1)
             else:
                 return None, fig
@@ -44,11 +44,11 @@ def plot_contour(env, value_fun, save=False, fig=None, iteration=None):
         if env.__class__.__name__ == 'GridWorldEnv':
             image[env._grid.astype(bool),:] = 0
         ax.imshow(image)
-    elif env.obs_dims == 1:
+    elif env.obs_dim == 1:
         V = np.expand_dims(value_fun.get_values(), 0)
         V = (V - V.min())/(V.max() - V.min())
         ax.imshow(V, vmin=0, vmax=1, cmap=plt.cm.coolwarm, origin='lower')
-    elif env.obs_dims == 2:
+    elif env.obs_dim == 2:
         bx, by = env._state_bins_per_dim
         V = value_fun.get_values()[:-1].reshape(bx, by)
         V = (V - V.min())/(V.max() - V.min() + 1e-6)

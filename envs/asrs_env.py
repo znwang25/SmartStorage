@@ -43,11 +43,11 @@ class ASRSEnv(gym.Env):
         'video.frames_per_second': 50
     }
 
-    def __init__(self, storage_shape, dist_param = None):
-        self.seed()
+    def __init__(self, storage_shape, dist_param = None, seed=42):
+        self.seed(seed)
         self.storage_shape = storage_shape
         self.num_products = np.array(storage_shape).prod()
-        self.storage_map = np.random.permutation(self.num_products) + 1
+        self.reset()
         self.dist_origin_to_exit = 1 # Distance from (0,0,0) to exit
         self._storage_maps = None
         self._num_envs = None
@@ -59,15 +59,24 @@ class ASRSEnv(gym.Env):
         self.max_distance = (np.array(storage_shape)-1).sum()+self.dist_origin_to_exit
 
         self._fig = None
-        self.cmap = matplotlib.cm.get_cmap('Spectral')
-        self.init_plot = self.storage_map.reshape(self.storage_shape) 
-        self.dt = .1
+        # self.cmap = matplotlib.cm.get_cmap('Spectral')
+        self.cmap = matplotlib.cm.get_cmap('coolwarm')
+        self.dt = .2
         self._scale = 16
         self.vectorized = True
-        self.max_path_length = 100
+        self.max_path_length = 10
+        self.__name__ = 'ASRSEnv'
+
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
+
+    def reset(self):
+        self._storage_maps = None
+        self.storage_map = np.random.permutation(self.num_products)+1
+        self.steps_beyond_done = None
+        self.init_plot = self.storage_map.reshape(self.storage_shape) 
+        return np.array(self.storage_map).copy()
 
     def get_bin_coordinate(self,bin_id):
         '''
@@ -93,12 +102,6 @@ class ASRSEnv(gym.Env):
 
     def set_storage_map(self, storage_map):
         self.storage_map = storage_map
-
-    def reset(self):
-        self._storage_maps = None
-        self.storage_map = np.random.permutation(self.num_products)
-        self.steps_beyond_done = None
-        return np.array(self.storage_map)
 
     def get_orders(self, num_envs=1):
         if num_envs == 1:
@@ -126,12 +129,12 @@ class ASRSEnv(gym.Env):
         assert self._storage_maps is not None
         storage_maps = self._storage_maps
         orders = self.get_orders(num_envs=self._num_envs)
-        rewards = np.zeros((self._num_envs,))
+        costs = np.zeros((self._num_envs,))
         for i, action in enumerate(actions):
             if (action is not None) and (action[1]!=action[0]):
                 self._storage_maps[i,action[0]], self._storage_maps[i, action[1]] = storage_maps[i, action[1]], storage_maps[i, action[0]]
-                rewards[i] += -1
-        return np.array(self._storage_maps).copy(),orders, rewards
+                costs[i] += -1
+        return np.array(self._storage_maps).copy(),orders, costs
 
     def vec_reset(self, num_envs=None):
         if num_envs is None:
@@ -139,7 +142,7 @@ class ASRSEnv(gym.Env):
             num_envs = self._num_envs
         else:
             self._num_envs = num_envs
-        self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))
+        self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))+1
         return np.array(self._storage_maps).copy()
 
 
@@ -151,9 +154,9 @@ class ASRSEnv(gym.Env):
         if self._fig is None:
             self._fig = plt.figure()
             self._ax = self._fig.add_subplot(111)
-            data = self.upsample(self.init_plot,self._scale) 
-            data = self.cmap(data/self.num_products)
-            for ix,iy in np.ndindex(self.init_plot.shape):
+            data = self.upsample(self.dist_param[self.init_plot-1],self._scale) 
+            data = self.cmap(data)
+            for ix,iy in np.ndindex(self.init_plot.shape[:2]):
                 number = self.init_plot[ix,iy]
                 self.add_numbers_on_plot(number,data[ix*16:(ix+1)*16,iy*16:(iy+1)*16,:3])
             
@@ -169,7 +172,7 @@ class ASRSEnv(gym.Env):
             self._ax.set_aspect('equal')
             self._canvas = FigureCanvas(self._fig)
         current_map = self.storage_map.reshape(self.storage_shape)
-        data = self.cmap(current_map/self.num_products) 
+        data = self.cmap(self.dist_param[current_map-1]) 
         data = self.upsample(data,self._scale) 
         for ix,iy in np.ndindex(self.init_plot.shape):
                 number = current_map[ix,iy]
