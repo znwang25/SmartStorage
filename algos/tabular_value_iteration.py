@@ -51,6 +51,7 @@ class ValueIteration(object):
                  max_itr=80,
                  render=False,
                  num_rollouts=1,
+                 max_path_length=10,
                  temperature=1.,
                  ):
         self.env = env
@@ -67,6 +68,7 @@ class ValueIteration(object):
         self.render_itr = render_itr
         self.render = render
         self.num_rollouts = num_rollouts
+        self.max_path_length = max_path_length
         self.temperature = temperature
         self.eps = 1e-8
 
@@ -87,7 +89,7 @@ class ValueIteration(object):
                 next_pi = self.get_next_policy()
                 self.policy.update(next_pi)
                 average_return, video = rollout(self.env, self.policy, render=render,
-                                                num_rollouts=self.num_rollouts, iteration=itr)
+                                                num_rollouts=self.num_rollouts, max_path_length=self.max_path_length,iteration=itr)
                 if render:
                     contour, fig = plot_contour(self.env, self.value_fun, fig=fig, iteration=itr)
                     contours += [contour] * len(video)
@@ -106,7 +108,7 @@ class ValueIteration(object):
         self.policy.update(next_pi)
         contour, fig = plot_contour(self.env, self.value_fun, save=True, fig=fig, iteration=itr)
         average_return, video = rollout(self.env, self.policy,
-                                        render=self.render, num_rollouts=self.num_rollouts, iteration=itr)
+                                        render=self.render, num_rollouts=self.num_rollouts, max_path_length=self.max_path_length, iteration=itr)
         plot_returns(returns)
         if self.render:
             videos += video

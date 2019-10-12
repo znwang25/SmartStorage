@@ -7,13 +7,6 @@ class RandomPolicy(object):
     def __init__(self, env):
         self.num_products = env.num_products
 
-    def get_action_vec(self, states):
-        n = states.shape[0]
-        actions = []
-        for i in range(n):
-            actions.append(np.random.choice(self.num_products,2,replace=False))
-        return actions
-
     def get_action(self, state):
         action = np.random.choice(self.num_products,2,replace=False)
         return action
@@ -37,20 +30,22 @@ class TabularPolicy(object):
     def __init__(self, env):
         # assert isinstance(env.action_space, spaces.Discrete)
         # assert isinstance(env.observation_space, spaces.Discrete)
-        self.act_dim = env.action_dim
+        self.num_actions = env.num_actions
         self.num_states = env.num_states
-        self._policy = np.random.uniform(0, 1, size=(self.num_states, self.act_dim))
+        self._policy = np.random.uniform(0, 1, size=(self.num_states, self.num_actions))
 
     def get_action(self, state):
         probs = np.array(self._policy[state])
-        if probs.ndim == 2:
-            probs = probs / np.expand_dims(np.sum(probs, axis=-1), axis=-1)
-            s = probs.cumsum(axis=-1)
-            r = np.expand_dims(np.random.rand(probs.shape[0]), axis=-1)
-            action = (s < r).sum(axis=1)
-        elif probs.ndim == 1:
-            idxs = np.random.multinomial(1, probs / np.sum(probs))
-            action = np.argmax(idxs)
+        # if probs.ndim == 2:
+        #     probs = probs / np.expand_dims(np.sum(probs, axis=-1), axis=-1)
+        #     s = probs.cumsum(axis=-1)
+        #     r = np.expand_dims(np.random.rand(probs.shape[0]), axis=-1)
+        #     action = (s < r).sum(axis=1)
+        # elif probs.ndim == 1:
+        if probs.ndim == 1:
+            # idxs = np.random.multinomial(1, probs / np.sum(probs))
+            # action = np.argmax(idxs)
+            action = np.random.choice(a=self.num_actions, size=1, p=probs/np.sum(probs))[0]
         else:
             raise NotImplementedError
         return action
@@ -58,14 +53,14 @@ class TabularPolicy(object):
     def get_probs(self):
         return np.array(self._policy) / np.expand_dims(np.sum(self._policy, axis=-1), axis=-1)
 
-    def update(self, actions):
-        assert (actions >= 0).all()
-        assert actions.shape[0] == self.num_states
-        if actions.ndim == 1:
+    def update(self, pi):
+        assert (pi >= 0).all()
+        assert pi.shape[0] == self.num_states
+        if pi.ndim == 1:
             self._policy[:, :] = 0
-            self._policy[range(self.num_states), actions] = 1.
-        elif actions.ndim == 2:
-            self._policy = actions
+            self._policy[range(self.num_states), pi] = 1.
+        elif pi.ndim == 2:
+            self._policy = pi
         else:
             raise TypeError
 

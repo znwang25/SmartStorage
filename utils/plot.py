@@ -20,37 +20,38 @@ def plot_contour(env, value_fun, save=False, fig=None, iteration=None):
         ax = fig.add_subplot(111)
     canvas = FigureCanvas(fig)
     ax = fig.axes[0]
-    if not hasattr(env, '_wrapped_env'):
-        if isinstance(env.observation_space, spaces.Discrete):
-            if env.obs_dim == 2:
-                V = value_fun.get_values()[:-1].reshape(env._size, env._size)
-            elif env.obs_dim == 1:
-                V = value_fun.get_values()[:-1].reshape(env._size, 1)
-            else:
-                return None, fig
-        else:
-            low, high = env.observation_space.low, env.observation_space.high
-            if low.shape[0] == 2:
-                points = np.array(np.meshgrid(*[np.linspace(l, h, 41) for l, h in zip(low, high)])).reshape(2, -1).T
-                V = value_fun.get_values(points).reshape(41, 41)[: ,::-1]
-            elif low.shape[0] == 1:
-                points = np.stack([np.linspace(l, h, 41) for l, h in zip(low, high)])
-                V = value_fun.get_values(points.reshape(-1, 2))
-            else:
-                return None, fig
+    # if not hasattr(env, '_wrapped_env'):
+    #     if isinstance(env.observation_space, spaces.Discrete):
+    #         if env.obs_dim == 2:
+    #             V = value_fun.get_values()[:-1].reshape(env._size, env._size)
+    #         elif env.obs_dim == 1:
+    #             V = value_fun.get_values()[:-1].reshape(env._size, 1)
+    #         else:
+    #             return None, fig
+    #     else:
+    #         low, high = env.observation_space.low, env.observation_space.high
+    #         if low.shape[0] == 2:
+    #             points = np.array(np.meshgrid(*[np.linspace(l, h, 41) for l, h in zip(low, high)])).reshape(2, -1).T
+    #             V = value_fun.get_values(points).reshape(41, 41)[: ,::-1]
+    #         elif low.shape[0] == 1:
+    #             points = np.stack([np.linspace(l, h, 41) for l, h in zip(low, high)])
+    #             V = value_fun.get_values(points.reshape(-1, 2))
+    #         else:
+    #             return None, fig
 
-        V = ((V - V.min())/(V.max() - V.min() + 1e-6)).T[::-1, :]
-        image = (plt.cm.coolwarm(V)[::-1, :, :-1] * 255.).astype(np.uint8)
-        if env.__class__.__name__ == 'GridWorldEnv':
-            image[env._grid.astype(bool),:] = 0
-        ax.imshow(image)
-    elif env.obs_dim == 1:
+    #     V = ((V - V.min())/(V.max() - V.min() + 1e-6)).T[::-1, :]
+    #     image = (plt.cm.coolwarm(V)[::-1, :, :-1] * 255.).astype(np.uint8)
+    #     if env.__class__.__name__ == 'GridWorldEnv':
+    #         image[env._grid.astype(bool),:] = 0
+    #     ax.imshow(image)
+    # elif env.obs_dim == 1:
+    if env.obs_dim == 1:
         V = np.expand_dims(value_fun.get_values(), 0)
         V = (V - V.min())/(V.max() - V.min())
         ax.imshow(V, vmin=0, vmax=1, cmap=plt.cm.coolwarm, origin='lower')
     elif env.obs_dim == 2:
-        bx, by = env._state_bins_per_dim
-        V = value_fun.get_values()[:-1].reshape(bx, by)
+        bx, by = env.storage_shape
+        V = value_fun.get_values().reshape(bx, by)
         V = (V - V.min())/(V.max() - V.min() + 1e-6)
         ax.imshow(V, vmin=0, vmax=1, cmap=plt.cm.coolwarm, origin='lower')
     else:
@@ -68,13 +69,13 @@ def plot_contour(env, value_fun, save=False, fig=None, iteration=None):
     return image, fig
 
 
-def rollout(env, policy, num_rollouts=1, render=True, iteration=None):
+def rollout(env, policy, num_rollouts=1, max_path_length=10, render=True, iteration=None):
     R = 0.
     images = []
     if num_rollouts > 1:
         obs = env.vec_reset(num_rollouts)
-        for t in range(env.max_path_length):
-            a = policy.get_action_vec(obs)
+        for t in range(max_path_length):
+            a = policy.get_action(obs)
             if render:
                 img = env.render('rgb_array', iteration)
             else:
@@ -84,7 +85,7 @@ def rollout(env, policy, num_rollouts=1, render=True, iteration=None):
             images.append(img)
     else:
         obs = env.reset()
-        for t in range(env.max_path_length):
+        for t in range(max_path_length):
             a = policy.get_action(obs)
             if render:
                 img = env.render('rgb_array', iteration)

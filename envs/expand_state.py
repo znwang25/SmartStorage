@@ -4,20 +4,20 @@ from collections.abc import Iterable
 import scipy.sparse as sparse
 import itertools
 from utils.utils import SparseArray
+import logger
 
 class ExpandStateWrapper(object):
     """
     Description:
-    This wrapper construct state and provide various utilities for re-enforcement learner to use to interact with the underlying environment. 
+    This wrapper constructs state and provide various utilities for reinforcement learner to use to interact with the underlying environment ASRSEnv. 
 
     State:
         Current Storage Map    np.array()   (M,)     
-        Outstanding order   np.array()   (M,)
-
+        Outstanding order   np.array()   (M,)     
     Actions:
         Num	of Action: M Choose 2 + 1
-        e.g  (a , b) switch bin a with bin b 
-             or do nothing
+        e.g  (a , b) switch good in bin a with good bin b 
+             or None do nothing
 
     Cost:
         Cost is delay_cost + self.exchange_cost_weight*exchange_cost
@@ -28,10 +28,11 @@ class ExpandStateWrapper(object):
 
     def __init__(self,
                  env,alpha=10,discount = 0.99):
-        print("Initiating Env")
+        logger.info("Initiating ExpandStateWrapper")
         self._wrapped_env = env
-        self._costs = None
         self.num_products = env.num_products
+        self.storage_shape = env.storage_shape
+        self.obs_dim = env.obs_dim
         self.max_distance = env.max_distance
         self.exchange_cost_weight = alpha
         self.discount = discount
@@ -42,57 +43,51 @@ class ExpandStateWrapper(object):
         all_permutations = list(itertools.permutations(range(1,self.num_products+1)))
         self.num_maps = len(all_permutations)
         self.num_states = self.num_maps # To be changed
-        self.obs_dim = 1
         self.id_to_map_dict = dict(zip(range(self.num_maps),all_permutations))
         self.map_to_id_dict = dict(zip(all_permutations,range(self.num_maps)))
         all_actions = list(itertools.combinations(range(self.num_products),2))+[None]
-        self.num_actions = len(all_actions)
-        self.action_dim = 1
+        self.num_actions = env.num_actions
         self.id_to_action_dict = dict(zip(range(self.num_actions),all_actions))
-        print('Starting transitions')
-        self.get_transitions()
-        print('Starting rewards')
-        self.get_rewards()
+        print('Starting transitions and rewards')
+        self.get_transitions_rewards()
         self.step(self.num_actions-1) # To get first order
-        # self._states = self._wrapped_env._storage_maps
         print("Env finished")
 
-    def get_transitions(self):
-        self.transitions = SparseArray(self.num_states, self.num_actions, 'nn', self.num_states)        
+    def get_transitions_rewards(self):
+        self.transitions = SparseArray(self.num_states, self.num_actions, 'nn', self.num_states)
+        self.rewards = SparseArray(self.num_states, self.num_actions, 'nn', self.num_states)
+        _values_transition = np.ones((self.num_states, self.num_actions))
+        _values_cost = np.zeros((self.num_states, self.num_actions))
+        _idxs = np.zeros((self.num_states, self.num_actions)).astype(int)
+        p = self._wrapped_env.dist_param
         for id_m in range(self.num_states):
-            for id_a in range(self.num_actions):
-                id_m_next,_ = self.next_map_id(id_m,id_a)
-                self.transitions[id_m,id_a,id_m_next] = 1
+            next_storage_maps, next_storage_ids, exchange_costs = self.vec_next_map_id_excost(id_m, np.arange(self.num_actions))
+            _idxs[id_m,:] = next_storage_ids
+            _values_cost[id_m,:] += self.exchange_cost_weight*exchange_costs
+            _values_cost[id_m,:] += ((self.discount/(1-self.discount)*(1-self.discount**self.distance))*p[next_storage_maps-1]).sum(axis=1)
+        self.transitions._values, self.transitions._idxs = np.expand_dims(_values_transition, axis=2), np.expand_dims(_idxs, axis=2)
+        self.rewards._values, self.rewards._idxs = -np.expand_dims(_values_cost, axis=2), np.expand_dims(_idxs, axis=2)
 
-        self.transitions = SparseArray(self.num_states, self.num_actions, 'nn', self.num_states)        
-        for id_m in range(self.num_states):
-            for id_a in range(self.num_actions):
-                id_m_next,_ = self.next_map_id(id_m,id_a)
-                self.transitions[id_m,id_a,id_m_next] = 1
-
-    def get_rewards(self):
-        self.rewards = SparseArray(self.num_states, self.num_actions, 'nn', self.num_states)        
-        for id_m in range(self.num_states):
-            for id_a in range(self.num_actions):
-                id_m_next, exchange_cost = self.next_map_id(id_m,id_a)
-                next_map = np.array(self.get_map_from_id(id_m_next))
-                p = self._wrapped_env.dist_param
-                expected_1_period_delay_cost = ((self.discount/(1-self.discount)*(1-self.discount**self.distance))*p[next_map-1]).sum()
-                self.rewards[id_m,id_a,id_m_next] = - (expected_1_period_delay_cost + self.exchange_cost_weight*exchange_cost)
-
-    def next_map_id(self, id_m, id_a):
+    def next_map_id_excost(self, id_m, id_a):
         storage_map = list(self.get_map_from_id(id_m))
         action =self.get_action_from_id(id_a)
         exchange_cost = 0
         if (action is not None) and (action[1]!=action[0]):
             storage_map[action[0]], storage_map[action[1]] = storage_map[action[1]], storage_map[action[0]]
             exchange_cost = np.abs(np.array(self._wrapped_env.get_bin_coordinate(action[0]))-np.array(self._wrapped_env.get_bin_coordinate(action[1]))).sum()
-        return self.get_id_from_map(tuple(storage_map)),exchange_cost
+        return self.get_id_from_map(storage_map),exchange_cost
+    
+    def vec_next_map_id_excost(self, id_m, id_a_s):
+        storage_maps = np.array(list(self.get_map_from_id(id_m))) * np.ones((len(id_a_s),1)).astype(int)
+        actions = np.array(list(map(self.get_action_from_id, id_a_s)))
+        actions = np.array([action if action is not None else (0, 0) for action in actions])
+        next_storage_maps = self._wrapped_env.vec_next_storage(storage_maps, actions)
+        next_storage_ids = np.array(list(map(self.get_id_from_map, next_storage_maps)))
+        exchange_costs = np.abs(np.array(self.get_bin_coordinate(actions[:,0]))-np.array(self.get_bin_coordinate(actions[:,1]))).sum(axis=0)
+        return next_storage_maps, next_storage_ids, exchange_costs
 
     def get_compelted_order_mask(self):
-        mask = np.zeros((self.max_distance,self.num_products))
-        for i in range(self.max_distance): 
-            mask[i] = (self.max_distance-i == self.distance)
+        mask = (self.max_distance-np.arange(self.max_distance).reshape((-1,1)) == self.distance).astype(int)
         return sparse.csr_matrix(mask)
 
     def step(self, id_a):
@@ -106,11 +101,11 @@ class ExpandStateWrapper(object):
             completed_order = np.array(completed_order[completed_order.nonzero()]).ravel().astype(int)-1
             self.outstanding_order -= np.bincount(completed_order, minlength=self.num_products)
         self.map_history = sparse.vstack([self.map_history,sparse.csr_matrix(next_storage_map * order[next_storage_map-1])])[1:]
-        return self.get_id_from_map(tuple(next_storage_map)), self.outstanding_order.copy(), cost
+        return self.get_id_from_map(next_storage_map), self.outstanding_order.copy(), cost
 
     def reset(self):
         storage_map = self._wrapped_env.reset()
-        return self.get_id_from_map(tuple(storage_map))
+        return self.get_id_from_map(storage_map)
         
 
     # def vec_step(self, actions):
@@ -136,10 +131,10 @@ class ExpandStateWrapper(object):
     def get_id_from_map(self, map_storage):
         """
         Get id of the map configuration
-        :param map_storage:
+        :param map_storage: tuple or np.array 
         :return: id_m
         """
-        return self.map_to_id_dict[map_storage]
+        return self.map_to_id_dict[tuple(map_storage)]
 
     def get_action_from_id(self, id_a):
         """

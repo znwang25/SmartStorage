@@ -52,10 +52,10 @@ class ASRSEnv(gym.Env):
         self.seed(seed)
         assert len(storage_shape) <= 3, "storage_shape length should be <= 3"
         self.storage_shape = storage_shape
+        self.obs_dim = 1
         self.num_products = np.array(storage_shape).prod()
 
         self.num_actions = int(self.num_products * (self.num_products - 1) / 2 + 1)
-        self.action_dim = 2
 
         self.reset()
         self.dist_origin_to_exit = 1 # Distance from (0,0,0) to exit
@@ -145,14 +145,19 @@ class ASRSEnv(gym.Env):
         # actions is a list of length n either 2-tuple or None
         assert np.array(list(map((lambda action: action is None or (action[0] < action[1] and action[1] < self.num_products and action[0] > -1)), actions))).all()
         assert self._storage_maps is not None
-        range_n = np.arange(self._num_envs)
-        actions = np.array([action if action is not None else (0, 0) for action in actions])
-        self._storage_maps[range_n, actions[:,0]], self._storage_maps[range_n, actions[:,1]] =\
-             self._storage_maps[range_n, actions[:,1]], self._storage_maps[range_n, actions[:,0]] 
+        self._storage_maps = self.vec_next_storage(self._storage_maps, actions)
         orders = self.get_orders(num_envs=self._num_envs)
         exchange_costs = np.abs(np.array(self.get_bin_coordinate(actions[:,0]))-np.array(self.get_bin_coordinate(actions[:,1]))).sum(axis=0)
         self.storage_map = self._storage_maps[0]
-        return np.array(self._storage_maps).copy(),orders, exchange_costs
+        return self._storage_maps.copy(),orders, exchange_costs
+    
+    def vec_next_storage(self, storage_maps, actions):
+        next_storage_maps = storage_maps.copy()
+        range_n = np.arange(next_storage_maps.shape[0])
+        actions = np.array([action if action is not None else (0, 0) for action in actions])
+        next_storage_maps[range_n, actions[:,0]], next_storage_maps[range_n, actions[:,1]] =\
+             next_storage_maps[range_n, actions[:,1]], next_storage_maps[range_n, actions[:,0]] 
+        return next_storage_maps
 
     def set_storage_map(self, storage_map):
         self.storage_map = storage_map.copy()
