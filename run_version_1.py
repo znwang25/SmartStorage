@@ -19,7 +19,7 @@ def main(args):
     env = ExpandStateWrapper(ASRSEnv(eval(args.storage_shape), dist_param = eval(args.dist_param)))
 
     env_name = env.__name__
-    exp_dir = os.getcwd() + '/data/version1/%s/policy_type%s_temperature%s/' % (env_name, args.policy_type, args.temperature)
+    exp_dir = os.getcwd() + '/data/version1/%s/policy_type%s_temperature%s_envsize_%s/' % (env_name, args.policy_type, args.temperature,np.array(eval(args.storage_shape)).prod())
     logger.configure(dir=exp_dir, format_strs=['stdout', 'log', 'csv'], level=eval(args.logger_level))
     args_dict = vars(args)
     args_dict['env'] = env_name
@@ -32,7 +32,8 @@ def main(args):
                           policy,
                           policy_type=args.policy_type,
                           render=render,
-                          temperature=args.temperature)
+                          temperature=args.temperature,
+                          num_rollouts = args.num_rollouts)
     algo.train()
 
 if __name__ == "__main__":
@@ -48,5 +49,7 @@ if __name__ == "__main__":
                         help="ASRSEnv storage shape")
     parser.add_argument("--dist_param", "-prob", type=str, default='[0.1, 0.9]',
                         help="ASRSEnv dist_param, the order probability")
+    parser.add_argument("--num_rollouts", "-nr", type=int, default=10,
+                        help="Number of rollouts used to evaluate policy")
     args = parser.parse_args()
     main(args)

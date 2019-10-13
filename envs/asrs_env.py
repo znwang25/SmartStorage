@@ -54,19 +54,17 @@ class ASRSEnv(gym.Env):
         self.storage_shape = storage_shape
         self.obs_dim = 1
         self.num_products = np.array(storage_shape).prod()
-
         self.num_actions = int(self.num_products * (self.num_products - 1) / 2 + 1)
-
-        self.reset()
         self.dist_origin_to_exit = 1 # Distance from (0,0,0) to exit
-        self._storage_maps = None
-        self._num_envs = None
-
+        self.max_distance = (np.array(storage_shape)-1).sum()+self.dist_origin_to_exit
+        
         if dist_param == None: 
             self.dist_param = np.array([0.05]*self.num_products)
         else:
             self.dist_param = np.array(dist_param)
-        self.max_distance = (np.array(storage_shape)-1).sum()+self.dist_origin_to_exit
+
+        self.reset()
+
 
         self._fig = None
         # self.cmap = matplotlib.cm.get_cmap('Spectral')
@@ -82,6 +80,7 @@ class ASRSEnv(gym.Env):
 
     def reset(self):
         self._storage_maps = None
+        self._num_envs = None
         self.storage_map = np.random.permutation(self.num_products)+1
         self.init_plot = self.storage_map.reshape(self.storage_shape) 
         return np.array(self.storage_map).copy()
@@ -145,6 +144,7 @@ class ASRSEnv(gym.Env):
         # actions is a list of length n either 2-tuple or None
         assert np.array(list(map((lambda action: action is None or (action[0] < action[1] and action[1] < self.num_products and action[0] > -1)), actions))).all()
         assert self._storage_maps is not None
+        actions = np.array([action if action is not None else (0, 0) for action in actions])
         self._storage_maps = self.vec_next_storage(self._storage_maps, actions)
         orders = self.get_orders(num_envs=self._num_envs)
         exchange_costs = np.abs(np.array(self.get_bin_coordinate(actions[:,0]))-np.array(self.get_bin_coordinate(actions[:,1]))).sum(axis=0)
@@ -154,7 +154,6 @@ class ASRSEnv(gym.Env):
     def vec_next_storage(self, storage_maps, actions):
         next_storage_maps = storage_maps.copy()
         range_n = np.arange(next_storage_maps.shape[0])
-        actions = np.array([action if action is not None else (0, 0) for action in actions])
         next_storage_maps[range_n, actions[:,0]], next_storage_maps[range_n, actions[:,1]] =\
              next_storage_maps[range_n, actions[:,1]], next_storage_maps[range_n, actions[:,0]] 
         return next_storage_maps

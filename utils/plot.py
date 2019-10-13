@@ -6,12 +6,12 @@ from gym import spaces
 import time
 
 
-def plot_returns(returns):
+def plot_returns(returns,varname='total_cost'):
     plt.close()
     plt.plot(range(len(returns)), returns)
     plt.xlabel("Iterations")
-    plt.ylabel("Average Return")
-    plt.savefig('%s/learning_curve.png' % logger.get_dir())
+    plt.ylabel("Average %s" % varname)
+    plt.savefig('%s/learning_curve_%s.png' % (logger.get_dir(),varname))
 
 
 def plot_contour(env, value_fun, save=False, fig=None, iteration=None):
@@ -71,6 +71,7 @@ def plot_contour(env, value_fun, save=False, fig=None, iteration=None):
 
 def rollout(env, policy, num_rollouts=1, max_path_length=10, render=True, iteration=None):
     R = 0.
+    delay_c = 0.
     images = []
     if num_rollouts > 1:
         obs = env.vec_reset(num_rollouts)
@@ -80,8 +81,9 @@ def rollout(env, policy, num_rollouts=1, max_path_length=10, render=True, iterat
                 img = env.render('rgb_array', iteration)
             else:
                 img = None
-            obs, order, reward = env.vec_step(a)
-            R += reward
+            obs, order, total_cost, delay_cost = env.vec_step(a)
+            R += total_cost
+            delay_c += delay_cost
             images.append(img)
     else:
         obs = env.reset()
@@ -91,7 +93,8 @@ def rollout(env, policy, num_rollouts=1, max_path_length=10, render=True, iterat
                 img = env.render('rgb_array', iteration)
             else:
                 img = None
-            obs, order, reward = env.step(a)
-            R += reward
+            obs, order, total_cost, delay_cost = env.step(a)
+            R += total_cost
+            delay_c += delay_cost
             images.append(img)
-    return np.sum(R)/num_rollouts, images
+    return np.sum(R)/num_rollouts, np.sum(delay_c)/num_rollouts, images

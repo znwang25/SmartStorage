@@ -50,7 +50,7 @@ class ValueIteration(object):
                  policy_type='deterministic',
                  max_itr=80,
                  render=False,
-                 num_rollouts=1,
+                 num_rollouts=10,
                  max_path_length=10,
                  temperature=1.,
                  ):
@@ -80,6 +80,7 @@ class ValueIteration(object):
         videos = []
         contours = []
         returns = []
+        delay_cs = []
         fig = None
 
         while not self._stop_condition(itr, next_v, v) and itr < self.max_itr:
@@ -88,33 +89,36 @@ class ValueIteration(object):
             if log:
                 next_pi = self.get_next_policy()
                 self.policy.update(next_pi)
-                average_return, video = rollout(self.env, self.policy, render=render,
+                average_return, avg_delay_cost, video = rollout(self.env, self.policy, render=render,
                                                 num_rollouts=self.num_rollouts, max_path_length=self.max_path_length,iteration=itr)
                 if render:
                     contour, fig = plot_contour(self.env, self.value_fun, fig=fig, iteration=itr)
                     contours += [contour] * len(video)
                     videos += video
                 returns.append(average_return)
+                delay_cs.append(avg_delay_cost)
                 logger.logkv('Iteration', itr)
                 logger.logkv('Average Returns', average_return)
+                logger.logkv('Average Delayed Costs', avg_delay_cost)
                 logger.dumpkvs()
             next_v = self.get_next_values()
             self.value_fun.update(next_v)
             itr += 1
 
         next_pi = self.get_next_policy()
-        print(next_pi)
-        print(self.value_fun.get_values())
         self.policy.update(next_pi)
         contour, fig = plot_contour(self.env, self.value_fun, save=True, fig=fig, iteration=itr)
-        average_return, video = rollout(self.env, self.policy,
-                                        render=self.render, num_rollouts=self.num_rollouts, max_path_length=self.max_path_length, iteration=itr)
+        average_return, avg_delay_cost, video = rollout(self.env, self.policy,
+                                        render=True, num_rollouts=self.num_rollouts, max_path_length=self.max_path_length, iteration=itr)
+        self.env.close()
         plot_returns(returns)
+        plot_returns(delay_cs,'delayed_cost')
+        videos += video
         if self.render:
-            videos += video
             contours += [contour]
         logger.logkv('Iteration', itr)
         logger.logkv('Average Returns', average_return)
+        logger.logkv('Average Delayed Costs', avg_delay_cost)
 
         fps = int(4/getattr(self.env, 'dt', 0.1))
         if contours and contours[0] is not None:
@@ -126,40 +130,6 @@ class ValueIteration(object):
             clip.write_videofile('%s/roll_outs.mp4' % logger.get_dir())
 
         plt.close()
-
-    # def get_next_values(self):
-    #     """
-    #     Next values given by the Bellman equation
-
-    #     :return np.ndarray with the values for each state, shape (num_states,)
-    #     For the maximum entropy policy, to compute the unnormalized probabilities make sure:
-    #                                 1) Before computing the exponientated value substract the maximum value per state
-    #                                    over all the actions.
-    #                                 2) Add self.eps to them
-    #     """
-
-    #     """ INSERT YOUR CODE HERE"""
-    #     v = self.value_fun.get_values()
-    #     n_state = self.env.num_states
-    #     n_action = self.env.num_actions
-    #     Q_value = np.zeros((n_state, n_action))
-    #     for s in range(n_state):
-    #         for a in range(n_action):
-    #             if isinstance(self.transitions, SparseArray):
-    #                 non_zero_next_states = self.transitions._idxs[s,a]
-    #                 Q_value[s,a] = (self.transitions[s,a]*(self.rewards[s,a]+self.discount*v[non_zero_next_states])).sum()
-    #             else:
-    #                 Q_value[s,a] = (self.transitions[s,a] * (self.rewards[s,a]+self.discount*v)).sum() 
-    #     if self.policy_type == 'deterministic':
-    #         next_v = Q_value.max(axis=1)
-    #         self._next_policy = Q_value.argmax(axis=1)
-    #     elif self.policy_type == 'max_ent':
-    #         next_v = np.log(np.exp(1/self.temperature*(Q_value-Q_value.max(axis=1).reshape(-1, 1))).sum(axis=1))*self.temperature+Q_value.max(axis=1)
-    #         self._next_policy = np.exp(Q_value-Q_value.max(axis=1).reshape(-1, 1))+self.eps
-    #         self._next_policy /= np.linalg.norm(self._next_policy, ord=1, axis=1, keepdims=True)
-    #     else:
-    #         raise NotImplementedError
-    #     return next_v
 
     def get_next_values(self):
             """
@@ -215,31 +185,6 @@ class ValueIteration(object):
         else:
             raise NotImplementedError
         return pi
-
-
-    # def get_next_policy(self):
-    #     """
-    #     Next policy probabilities given by the Bellman equation
-
-    #     :return np.ndarray with the policy probabilities for each state and actions, shape (num_states, num_actions)
-    #     For the maximum entropy policy, to compute the unnormalized probabilities make sure:
-    #                                 1) Before computing the exponientated value substract the maximum value per state
-    #                                    over all the actions.
-    #                                 2) Add self.eps to them
-    #     """
-
-    #     """INSERT YOUR CODE HERE"""
-    #     if self.policy_type == 'deterministic':
-    #         if not hasattr(self,'_next_policy'):
-    #             self.get_next_values()
-    #         pi = self._next_policy
-    #     elif self.policy_type == 'max_ent':
-    #         if not hasattr(self,'_next_policy'):
-    #             self.get_next_values()
-    #         pi = self._next_policy
-    #     else:
-    #         raise NotImplementedError
-    #     return pi
 
     def _stop_condition(self, itr, next_v, v):
         rmax = np.max(np.abs(self.env.rewards))

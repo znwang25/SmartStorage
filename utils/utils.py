@@ -36,13 +36,12 @@ class TabularPolicy(object):
 
     def get_action(self, state):
         probs = np.array(self._policy[state])
-        # if probs.ndim == 2:
-        #     probs = probs / np.expand_dims(np.sum(probs, axis=-1), axis=-1)
-        #     s = probs.cumsum(axis=-1)
-        #     r = np.expand_dims(np.random.rand(probs.shape[0]), axis=-1)
-        #     action = (s < r).sum(axis=1)
-        # elif probs.ndim == 1:
-        if probs.ndim == 1:
+        if probs.ndim == 2:
+            probs = probs / np.expand_dims(np.sum(probs, axis=-1), axis=-1)
+            s = probs.cumsum(axis=-1)
+            r = np.expand_dims(np.random.rand(probs.shape[0]), axis=-1)
+            action = (s < r).sum(axis=1)
+        elif probs.ndim == 1:
             # idxs = np.random.multinomial(1, probs / np.sum(probs))
             # action = np.argmax(idxs)
             action = np.random.choice(a=self.num_actions, size=1, p=probs/np.sum(probs))[0]

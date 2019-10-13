@@ -37,9 +37,8 @@ class ExpandStateWrapper(object):
         self.exchange_cost_weight = alpha
         self.discount = discount
         self.distance = env.get_distance_to_exit()
-        self.map_history = sparse.csr_matrix(np.zeros((self.max_distance,self.num_products))) 
-        self.outstanding_order = np.zeros(self.num_products).astype(int)
-        self.completed_order_mask = self.get_compelted_order_mask()
+
+        self.completed_order_mask = self.get_completed_order_mask()        
         all_permutations = list(itertools.permutations(range(1,self.num_products+1)))
         self.num_maps = len(all_permutations)
         self.num_states = self.num_maps # To be changed
@@ -48,10 +47,12 @@ class ExpandStateWrapper(object):
         all_actions = list(itertools.combinations(range(self.num_products),2))+[None]
         self.num_actions = env.num_actions
         self.id_to_action_dict = dict(zip(range(self.num_actions),all_actions))
-        print('Starting transitions and rewards')
+        logger.info('Starting transitions and rewards')
         self.get_transitions_rewards()
-        self.step(self.num_actions-1) # To get first order
-        print("Env finished")
+        logger.info("Env finished")
+        self.reset(init=True)
+
+        self.vectorized = True
 
     def get_transitions_rewards(self):
         self.transitions = SparseArray(self.num_states, self.num_actions, 'nn', self.num_states)
@@ -86,7 +87,7 @@ class ExpandStateWrapper(object):
         exchange_costs = np.abs(np.array(self.get_bin_coordinate(actions[:,0]))-np.array(self.get_bin_coordinate(actions[:,1]))).sum(axis=0)
         return next_storage_maps, next_storage_ids, exchange_costs
 
-    def get_compelted_order_mask(self):
+    def get_completed_order_mask(self):
         mask = (self.max_distance-np.arange(self.max_distance).reshape((-1,1)) == self.distance).astype(int)
         return sparse.csr_matrix(mask)
 
@@ -101,24 +102,46 @@ class ExpandStateWrapper(object):
             completed_order = np.array(completed_order[completed_order.nonzero()]).ravel().astype(int)-1
             self.outstanding_order -= np.bincount(completed_order, minlength=self.num_products)
         self.map_history = sparse.vstack([self.map_history,sparse.csr_matrix(next_storage_map * order[next_storage_map-1])])[1:]
-        return self.get_id_from_map(next_storage_map), self.outstanding_order.copy(), cost
+        return self.get_id_from_map(next_storage_map), self.outstanding_order.copy(), cost, delay_cost
 
-    def reset(self):
-        storage_map = self._wrapped_env.reset()
-        return self.get_id_from_map(storage_map)
+    def reset(self, init=False):
+        if not init:
+            self._wrapped_env.reset()
+        self.map_history = sparse.csr_matrix(np.zeros((self.max_distance,self.num_products))) 
+        self.outstanding_order = np.zeros(self.num_products).astype(int)
+        next_storage_id, _, _, _ = self.step(self.num_actions-1) # To get first order
+        self._outstanding_orders = None
+        self._map_histories = None
+        return next_storage_id
+
+    def vec_reset(self, num_envs):
+        self._wrapped_env.vec_reset(num_envs)
+        self._outstanding_orders = np.zeros((num_envs,self.num_products)).astype(int)
+        self._map_histories = sparse.csr_matrix(np.zeros((self.max_distance*num_envs,self.num_products))) 
+        next_storage_ids, _, _, _ = self.vec_step([self.num_actions-1]*num_envs)
+        return next_storage_ids
+
+    def vec_step(self, id_a_s):
+        assert self._outstanding_orders is not None
+        actions = np.array(list(map(self.get_action_from_id, id_a_s)))
+        next_storage_maps, orders, exchange_costs = self._wrapped_env.vec_step(actions)
+        next_storage_ids = np.array(list(map(self.get_id_from_map, next_storage_maps)))
+        delay_cost = self._outstanding_orders.sum(axis = 1)
+        costs = delay_cost + self.exchange_cost_weight*exchange_costs
+        self._outstanding_orders += orders
+        num_envs = self._wrapped_env._num_envs
+        completed_orders = self._map_histories.multiply(np.repeat(self.completed_order_mask.toarray(),num_envs,axis=0)).tocsr()
         
-
-    # def vec_step(self, actions):
-    #     next_storage_maps, orders, costs = self._wrapped_env.vec_step(actions)
-    #     pass
-
-    # def vec_set_state(self, storage_maps):
-    #     self._wrapped_env.vec_set_storage_maps(storage_maps)
-    #     pass
-
-    # def vec_reset(self, num_envs):
-    #     storage_maps = self._wrapped_env.vec_reset(num_envs)
-    #     pass
+        # Vectorized bincount 
+        if completed_orders.count_nonzero() != 0:
+            nonzero_idx, _ = completed_orders.nonzero()
+            temp = completed_orders[completed_orders.nonzero()]+(self.num_products)*(nonzero_idx%num_envs)
+            temp = np.array(temp).ravel().astype(int)-1
+            completed_orders_count = np.bincount(temp,minlength=self.num_products*num_envs).reshape(-1,self.num_products)
+            self._outstanding_orders -= completed_orders_count
+        orders_sortby_bin = orders[np.repeat(np.arange(num_envs),self.num_products).reshape(num_envs,self.num_products),next_storage_maps-1]
+        self._map_histories = sparse.vstack([self._map_histories,sparse.csr_matrix(next_storage_maps * orders_sortby_bin)])[num_envs:]
+        return next_storage_ids, self._outstanding_orders.copy(), costs, delay_cost
 
     def get_map_from_id(self, id_m):
         """
