@@ -56,7 +56,11 @@ class ASRSEnv(gym.Env):
         self.num_products = np.array(storage_shape).prod()
         self.num_actions = int(self.num_products * (self.num_products - 1) / 2 + 1)
         assert (origin_coord is None) or (len(storage_shape) == len(origin_coord)), "origin_coord does not have correct dimensions"
-        self.origin_coord = origin_coord # Default is (0,0,0)
+        if origin_coord:
+            self.origin_coord = origin_coord
+        else:
+            self.origin_coord = np.zeros(len(storage_shape)).astype(int)
+            # Default is (0,0,0)
         self.dist_origin_to_exit = 1 # Distance from origin to exit
 
         if dist_param == None: 
@@ -83,7 +87,6 @@ class ASRSEnv(gym.Env):
         self._storage_maps = None
         self._num_envs = None
         self.storage_map = np.random.permutation(self.num_products)+1
-        self.init_plot = self.storage_map.reshape(self.storage_shape) 
         return np.array(self.storage_map).copy()
 
     def vec_reset(self, num_envs=None):
@@ -94,7 +97,6 @@ class ASRSEnv(gym.Env):
             self._num_envs = num_envs
         self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))+1
         self.storage_map = self._storage_maps[0]
-        self.init_plot = self.storage_map.reshape(self.storage_shape) 
         return np.array(self._storage_maps).copy()
 
     def get_bin_coordinate(self,bin_id):
@@ -117,10 +119,7 @@ class ASRSEnv(gym.Env):
             coords = self.get_bin_coordinate(np.arange(self.num_products))
         else:
             coords = self.get_bin_coordinate(bin_id)
-        if self.origin_coord is None:
-            return np.vstack(coords).sum(axis=0) + self.dist_origin_to_exit
-        else:
-            return self.get_distance_between_coord(coords,np.vstack(self.origin_coord)) + self.dist_origin_to_exit
+        return self.get_distance_between_coord(coords,np.vstack(self.origin_coord)) + self.dist_origin_to_exit
 
     def get_distance_between_coord(self, coord1, coord2):
         return np.abs(np.array(coord1)-np.array(coord2)).sum(axis=0)
@@ -174,6 +173,7 @@ class ASRSEnv(gym.Env):
         self._storage_maps = storage_maps.copy()
 
     def render(self, mode='human', iteration=None):
+        assert len(self.storage_shape) == 2, "Storage map need to be 2-d in order to render"
         if self._fig is None:
             self._fig = plt.figure()
             self._ax = self._fig.add_subplot(111)
@@ -190,9 +190,11 @@ class ASRSEnv(gym.Env):
         current_map = self.storage_map.reshape(self.storage_shape)
         data = self.cmap(self.dist_param[current_map-1]) 
         data = self.upsample(data,self._scale) 
-        for ix,iy in np.ndindex(self.init_plot.shape):
+        for ix,iy in np.ndindex(self.storage_shape):
                 number = current_map[ix,iy]
-                self.add_numbers_on_plot(number,data[ix*16:(ix+1)*16,iy*16:(iy+1)*16,:3])
+                box = data[ix*self._scale:(ix+1)*self._scale,iy*self._scale:(iy+1)*self._scale,:3]
+                self.add_numbers_on_plot(number,box)
+        self.mark_exit_on_plot(data)
         self._render = self._ax.imshow(data,animated=True)
         # self._render.set_data(data)
         if iteration is not None:
@@ -220,6 +222,15 @@ class ASRSEnv(gym.Env):
         draw.text(((self._scale - w)/2, (self._scale - h)/2), number)
         p = 1-np.array(imageRGB)/255
         box[np.where(p==0)]= p[np.where(p==0)]
+
+    def mark_exit_on_plot(self, plot):
+        box = plot[self.origin_coord[0]*self._scale:(self.origin_coord[0]+1)*self._scale,self.origin_coord[1]*self._scale:(self.origin_coord[1]+1)*self._scale,:3]
+        border = np.ones((self._scale,self._scale,3),dtype=bool)
+        border[1:-1,1:-1,:] = False
+        color = np.array([255, 215, 0])/255
+        rgb_patch = np.ones((self._scale,self._scale, 3), dtype=np.uint8)
+        rgb_patch= rgb_patch*color
+        box[border]= rgb_patch[border]
 
     def close(self):
         plt.close()
