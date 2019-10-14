@@ -48,16 +48,17 @@ class ASRSEnv(gym.Env):
         'video.frames_per_second': 30
     }
 
-    def __init__(self, storage_shape, dist_param = None, seed=42):
+    def __init__(self, storage_shape, dist_param = None, origin_coord= None, seed=42):
         self.seed(seed)
         assert len(storage_shape) <= 3, "storage_shape length should be <= 3"
         self.storage_shape = storage_shape
         self.obs_dim = 1
         self.num_products = np.array(storage_shape).prod()
         self.num_actions = int(self.num_products * (self.num_products - 1) / 2 + 1)
-        self.dist_origin_to_exit = 1 # Distance from (0,0,0) to exit
-        self.max_distance = (np.array(storage_shape)-1).sum()+self.dist_origin_to_exit
-        
+        assert (origin_coord is None) or (len(storage_shape) == len(origin_coord)), "origin_coord does not have correct dimensions"
+        self.origin_coord = origin_coord # Default is (0,0,0)
+        self.dist_origin_to_exit = 1 # Distance from origin to exit
+
         if dist_param == None: 
             self.dist_param = np.array([0.05]*self.num_products)
         else:
@@ -113,9 +114,16 @@ class ASRSEnv(gym.Env):
     
     def get_distance_to_exit(self,bin_id = None):
         if bin_id is None:
-            return np.vstack(self.get_bin_coordinate(np.arange(self.num_products))).sum(axis=0) + self.dist_origin_to_exit
+            coords = self.get_bin_coordinate(np.arange(self.num_products))
         else:
-            return sum(self.get_bin_coordinate(bin_id)) + self.dist_origin_to_exit
+            coords = self.get_bin_coordinate(bin_id)
+        if self.origin_coord is None:
+            return np.vstack(coords).sum(axis=0) + self.dist_origin_to_exit
+        else:
+            return self.get_distance_between_coord(coords,np.vstack(self.origin_coord)) + self.dist_origin_to_exit
+
+    def get_distance_between_coord(self, coord1, coord2):
+        return np.abs(np.array(coord1)-np.array(coord2)).sum(axis=0)
 
     def get_orders(self, num_envs=1):
         if num_envs == 1:
@@ -135,7 +143,7 @@ class ASRSEnv(gym.Env):
         order = self.get_orders()
         if (action is not None):
             storage_map[action[0]], storage_map[action[1]] = storage_map[action[1]], storage_map[action[0]]
-            exchange_cost +=np.abs(np.array(self.get_bin_coordinate(action[0]))-np.array(self.get_bin_coordinate(action[1]))).sum()
+            exchange_cost += self.get_distance_between_coord(self.get_bin_coordinate(action[0]), self.get_bin_coordinate(action[1]))
         self.storage_map = storage_map
         return self.storage_map.copy(), order, exchange_cost
 
@@ -147,7 +155,7 @@ class ASRSEnv(gym.Env):
         actions = np.array([action if action is not None else (0, 0) for action in actions])
         self._storage_maps = self.vec_next_storage(self._storage_maps, actions)
         orders = self.get_orders(num_envs=self._num_envs)
-        exchange_costs = np.abs(np.array(self.get_bin_coordinate(actions[:,0]))-np.array(self.get_bin_coordinate(actions[:,1]))).sum(axis=0)
+        exchange_costs = self.get_distance_between_coord(self.get_bin_coordinate(actions[:,0]), self.get_bin_coordinate(actions[:,1]))
         self.storage_map = self._storage_maps[0]
         return self._storage_maps.copy(),orders, exchange_costs
     

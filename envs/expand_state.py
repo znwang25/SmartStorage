@@ -33,10 +33,10 @@ class ExpandStateWrapper(object):
         self.num_products = env.num_products
         self.storage_shape = env.storage_shape
         self.obs_dim = env.obs_dim
-        self.max_distance = env.max_distance
         self.exchange_cost_weight = alpha
         self.discount = discount
         self.distance = env.get_distance_to_exit()
+        self.max_distance = self.distance.max()
 
         self.completed_order_mask = self.get_completed_order_mask()        
         all_permutations = list(itertools.permutations(range(1,self.num_products+1)))
@@ -75,7 +75,7 @@ class ExpandStateWrapper(object):
         exchange_cost = 0
         if (action is not None) and (action[1]!=action[0]):
             storage_map[action[0]], storage_map[action[1]] = storage_map[action[1]], storage_map[action[0]]
-            exchange_cost = np.abs(np.array(self._wrapped_env.get_bin_coordinate(action[0]))-np.array(self._wrapped_env.get_bin_coordinate(action[1]))).sum()
+            exchange_cost = self._wrapped_env.get_distance_between_coord(self._wrapped_env.get_bin_coordinate(action[0]),self._wrapped_env.get_bin_coordinate(action[1]))
         return self.get_id_from_map(storage_map),exchange_cost
     
     def vec_next_map_id_excost(self, id_m, id_a_s):
@@ -84,7 +84,7 @@ class ExpandStateWrapper(object):
         actions = np.array([action if action is not None else (0, 0) for action in actions])
         next_storage_maps = self._wrapped_env.vec_next_storage(storage_maps, actions)
         next_storage_ids = np.array(list(map(self.get_id_from_map, next_storage_maps)))
-        exchange_costs = np.abs(np.array(self.get_bin_coordinate(actions[:,0]))-np.array(self.get_bin_coordinate(actions[:,1]))).sum(axis=0)
+        exchange_costs = self._wrapped_env.get_distance_between_coord(self.get_bin_coordinate(actions[:,0]),self.get_bin_coordinate(actions[:,1]))
         return next_storage_maps, next_storage_ids, exchange_costs
 
     def get_completed_order_mask(self):

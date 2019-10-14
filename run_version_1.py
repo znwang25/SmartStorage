@@ -16,7 +16,7 @@ def main(args):
     from envs import ASRSEnv, ExpandStateWrapper
 
     assert np.array(eval(args.storage_shape)).prod() == len(eval(args.dist_param)), 'storage_shape should be consistent with dist_param length'
-    env = ExpandStateWrapper(ASRSEnv(eval(args.storage_shape), dist_param = eval(args.dist_param)))
+    env = ExpandStateWrapper(ASRSEnv(eval(args.storage_shape), origin_coord=eval(args.exit_coord), dist_param = eval(args.dist_param)))
 
     env_name = env.__name__
     exp_dir = os.getcwd() + '/data/version1/%s/policy_type%s_temperature%s_envsize_%s/' % (env_name, args.policy_type, args.temperature,np.array(eval(args.storage_shape)).prod())
@@ -47,6 +47,8 @@ if __name__ == "__main__":
                         help="Level of the logger to be print")
     parser.add_argument("--storage_shape", "-s", type=str, default='(2, 1)',
                         help="ASRSEnv storage shape")
+    parser.add_argument("--exit_coord", "-e", type=str, default='None',
+                        help="Coordinate of the exit, default is the origin")
     parser.add_argument("--dist_param", "-prob", type=str, default='[0.1, 0.9]',
                         help="ASRSEnv dist_param, the order probability")
     parser.add_argument("--num_rollouts", "-nr", type=int, default=10,
