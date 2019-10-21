@@ -11,20 +11,22 @@ class RandomPolicy(object):
         action = np.random.choice(self.num_products,2,replace=False)
         return action
 
-class TabularValueFun(object):
-    def __init__(self, env):
-        self.num_states = env.num_states
-        self._value_fun = np.zeros(shape=(self.num_states,))
+class SimpleMaxPolicy(object):
+    def __init__(self, env, value_fun, num_acts):
+        self.env = env
+        self.discount = env.discount
+        self.num_products = env.num_products
+        self._value_fun = value_fun
+        self.num_acts = env.num_actions
 
-    def get_values(self, states=None):
-        if states is None:
-            return self._value_fun
-        else:
-            return self._value_fun[states]
-
-    def update(self, values):
-        self._value_fun = values
-
+    def get_action(self, state):
+        actions = self.env.sample_actions(self.num_acts, all=True)
+        total_rewards = np.zeros(self.num_acts)
+        self.env.vec_set_state(np.array([state]*self.num_acts))
+        next_states, rewards, delay_costs = self.env.vec_step(actions)
+        total_rewards += rewards + (self.discount)*self._value_fun.get_values(next_states)
+        print(actions[np.argmax(total_rewards)])
+        return actions[np.argmax(total_rewards)]
 
 class TabularPolicy(object):
     def __init__(self, env):
@@ -62,6 +64,161 @@ class TabularPolicy(object):
             self._policy = pi
         else:
             raise TypeError
+
+
+class TabularValueFun(object):
+    def __init__(self, env):
+        self.num_states = env.num_states
+        self._value_fun = np.zeros(shape=(self.num_states,))
+
+    def get_values(self, states=None):
+        if states is None:
+            return self._value_fun
+        else:
+            return self._value_fun[states]
+
+    def update(self, values):
+        self._value_fun = values
+
+class LookAheadPolicy(object):
+    """
+    Look ahead policy
+
+    -- UTILS VARIABLES FOR RUNNING THE CODE --
+    * look_ahead_type (str): Type of look ahead policy to use
+
+    -- VARIABLES/FUNCTIONS YOU WILL NEED TO USE --
+    * self.horizon (int): Horizon for the look ahead policy
+
+    * act_dim (int): Dimension of the state space
+
+    * self.num_elites (int): number of best actions to pick for the cross-entropy method
+
+    * self.value_fun (TabularValueFun):
+                - get_values(states): if states is None returns the values of all the states. Otherwise, it returns the
+                                      values of the specified states
+
+    * self.get_returns_state(state): It is the same that you implemented in the previous part
+    """
+    def __init__(self,
+                 env,
+                 value_fun,
+                 horizon,
+                 look_ahead_type='tabular',
+                 num_acts=20,
+                 cem_itrs=10,
+                 precent_elites=0.25,
+                 ):
+        self.env = env
+        self.discount = self.env.discount
+        self._value_fun = value_fun
+        self.horizon = horizon
+        self.num_acts = num_acts
+        self.cem_itrs = cem_itrs
+        self.num_elites = int(num_acts * precent_elites)
+        assert self.num_elites > 0
+        self.look_ahead_type = look_ahead_type
+
+    def get_action(self, state):
+        if self.look_ahead_type == 'tabular':
+            action = self.get_action_tabular(state)
+        elif self.look_ahead_type == 'rs':
+            action = self.get_action_rs(state)
+        elif self.look_ahead_type == 'cem':
+            action = self.get_action_cem(state)
+        else:
+            raise NotImplementedError
+        return action
+
+    def get_action_cem(self, state):
+        """
+        Do lookahead in the continous and discrete case with the cross-entropy method..
+        :param state (int if discrete np.ndarray if continous)
+        :return: best_action (int if discrete np.ndarray if continous)
+        """
+        num_acts = self.num_acts
+        """ INSERT YOUR CODE HERE"""
+        if isinstance(self.env.action_space, spaces.Discrete):
+            n_act = self.env.action_space.n
+            freq = np.ones((self.horizon,n_act))
+            for _ in range(self.cem_itrs):
+                actions = np.empty((self.horizon,num_acts),dtype=int)
+                for t in range(self.horizon):
+                    actions[t] = np.argmax(np.random.multinomial(1,freq[t]/freq[t].sum(),size=num_acts),axis=1)
+                returns = self.get_returns(state, actions)
+                elite_actions_ind = np.argpartition(returns, -self.num_elites)[-self.num_elites:]
+                elite_actions = actions[:,elite_actions_ind]
+                freq += np.apply_along_axis(np.bincount,axis=1,arr=elite_actions,minlength=n_act)
+            best_action = np.argmax(freq[0])
+        else:
+            act_low, act_high = self.env.action_space.low, self.env.action_space.high
+            act_dim = len(act_low)
+            std = np.eye(act_dim)*(act_high - act_low)/4
+            mu = np.zeros((self.horizon,act_dim))
+            for _ in range(self.cem_itrs):
+                actions = np.empty((self.horizon,num_acts,act_dim))
+                for t in range(self.horizon):
+                    actions[t] = np.random.multivariate_normal(mu[t],np.matmul(std.T,std),num_acts)
+                for i in range(act_dim):
+                    actions[actions<act_low[i]] = act_low[i]
+                    actions[actions>act_high[i]] = act_high[i]
+                returns = self.get_returns(state, actions)
+                elite_actions_ind = np.argpartition(returns, -self.num_elites)[-self.num_elites:]
+                elite_actions = actions[:,elite_actions_ind]
+                mu = np.mean(elite_actions,axis=1)
+            best_action = mu[0,:]
+            """ Your code ends here """
+        return best_action
+
+    def get_action_rs(self, state):
+        """
+        Do lookahead in the continous and discrete case with random shooting..
+        :param state (int if discrete np.ndarray if continous)
+        :return: best_action (int if discrete np.ndarray if continous)
+        """
+        num_acts = self.num_acts
+        """ INSERT YOUR CODE HERE """
+        # if isinstance(self.env.action_space, spaces.Discrete):
+        n_act = self.env.num_actions
+        if state.ndim == self.env.obs_dim:
+            actions = np.random.randint(0,n_act,size=(self.horizon,num_acts))
+            returns = self.get_returns(state, actions)
+            best_action = actions[0, np.argmax(returns)]
+        elif state.ndim == self.env.obs_dim+1:
+            actions = np.random.randint(0,n_act,size=(self.horizon*state.shape[0],num_acts))
+            returns = self.get_returns(state, actions)
+            best_action = actions[0, np.argmax(returns)]
+        else:
+            raise NotImplementedError
+            # actions_each_t = np.random.randint(0,n_act,size=(self.horizon,num_acts))
+            # actions = np.array(list(itertools.product(*[np.unique(row) for row in actions_each_t]))).T
+        # else:
+        #     assert num_acts is not None
+        #     act_low, act_high = self.env.action_space.low, self.env.action_space.high
+        #     actions = np.random.uniform(act_low, act_high, size=(self.horizon, num_acts, len(act_low)))
+        return self.env.get_action_from_id(best_action)
+
+    def get_returns(self, state, actions):
+        """
+        :param state: current state of the policy
+        :param actions: array of actions of shape [horizon, num_acts]
+        :return: returns for the specified horizon + self.discount ^ H value_fun
+        HINT: Make sure to take the discounting and done into acount!
+        """
+        assert self.env.vectorized
+        """ INSERT YOUR CODE HERE"""
+        H = self.horizon
+        n_total_actions = actions.shape[1]
+        self.env.vec_set_state(np.array([state]*n_total_actions))
+        returns = np.zeros(n_total_actions)
+        not_done_status = np.ones(n_total_actions, dtype=bool)
+        for t in range(H):
+            id_next_s, costs, delay_costs = self.env.vec_step(actions[t,:])
+            returns += (self.discount**t)*costs
+            self.env.vec_set_state(id_next_s)
+        returns += (self.discount**H)*self._value_fun.get_values(id_next_s)
+        return returns
+
 
 
 class SparseArray(object):

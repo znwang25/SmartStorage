@@ -102,14 +102,15 @@ class ExpandStateWrapper(object):
             completed_order = np.array(completed_order[completed_order.nonzero()]).ravel().astype(int)-1
             self.outstanding_order -= np.bincount(completed_order, minlength=self.num_products)
         self.map_history = sparse.vstack([self.map_history,sparse.csr_matrix(next_storage_map * order[next_storage_map-1])])[1:]
-        return self.get_id_from_map(next_storage_map), self.outstanding_order.copy(), cost, delay_cost
+        reward = -cost
+        return self.get_id_from_map(next_storage_map), reward, delay_cost
 
     def reset(self, init=False):
         if not init:
             self._wrapped_env.reset()
         self.map_history = sparse.csr_matrix(np.zeros((self.max_distance,self.num_products))) 
         self.outstanding_order = np.zeros(self.num_products).astype(int)
-        next_storage_id, _, _, _ = self.step(self.num_actions-1) # To get first order
+        next_storage_id, _, _= self.step(self.num_actions-1) # To get first order
         self._outstanding_orders = None
         self._map_histories = None
         return next_storage_id
@@ -118,7 +119,7 @@ class ExpandStateWrapper(object):
         self._wrapped_env.vec_reset(num_envs)
         self._outstanding_orders = np.zeros((num_envs,self.num_products)).astype(int)
         self._map_histories = sparse.csr_matrix(np.zeros((self.max_distance*num_envs,self.num_products))) 
-        next_storage_ids, _, _, _ = self.vec_step([self.num_actions-1]*num_envs)
+        next_storage_ids, _, _= self.vec_step([self.num_actions-1]*num_envs)
         return next_storage_ids
 
     def vec_step(self, id_a_s):
@@ -141,7 +142,8 @@ class ExpandStateWrapper(object):
             self._outstanding_orders -= completed_orders_count
         orders_sortby_bin = orders[np.repeat(np.arange(num_envs),self.num_products).reshape(num_envs,self.num_products),next_storage_maps-1]
         self._map_histories = sparse.vstack([self._map_histories,sparse.csr_matrix(next_storage_maps * orders_sortby_bin)])[num_envs:]
-        return next_storage_ids, self._outstanding_orders.copy(), costs, delay_cost
+        rewards = -costs
+        return next_storage_ids, rewards, delay_cost
 
     def get_map_from_id(self, id_m):
         """

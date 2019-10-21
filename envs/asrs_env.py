@@ -54,6 +54,7 @@ class ASRSEnv(gym.Env):
         self.storage_shape = storage_shape
         self.obs_dim = 1
         self.num_products = np.array(storage_shape).prod()
+        self.num_maps = math.factorial(self.num_products)
         self.num_actions = int(self.num_products * (self.num_products - 1) / 2 + 1)
         assert (origin_coord is None) or (len(storage_shape) == len(origin_coord)), "origin_coord does not have correct dimensions"
         if origin_coord:
@@ -96,7 +97,6 @@ class ASRSEnv(gym.Env):
         else:
             self._num_envs = num_envs
         self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))+1
-        self.storage_map = self._storage_maps[0]
         return np.array(self._storage_maps).copy()
 
     def get_bin_coordinate(self,bin_id):
@@ -155,7 +155,6 @@ class ASRSEnv(gym.Env):
         self._storage_maps = self.vec_next_storage(self._storage_maps, actions)
         orders = self.get_orders(num_envs=self._num_envs)
         exchange_costs = self.get_distance_between_coord(self.get_bin_coordinate(actions[:,0]), self.get_bin_coordinate(actions[:,1]))
-        self.storage_map = self._storage_maps[0]
         return self._storage_maps.copy(),orders, exchange_costs
     
     def vec_next_storage(self, storage_maps, actions):
@@ -165,10 +164,10 @@ class ASRSEnv(gym.Env):
              next_storage_maps[range_n, actions[:,1]], next_storage_maps[range_n, actions[:,0]] 
         return next_storage_maps
 
-    def set_storage_map(self, storage_map):
+    def set_state(self, storage_map):
         self.storage_map = storage_map.copy()
 
-    def vec_set_storage_map(self, storage_maps):
+    def vec_set_state(self, storage_maps):
         self._num_envs = len(storage_maps)
         self._storage_maps = storage_maps.copy()
 

@@ -81,8 +81,8 @@ def rollout(env, policy, num_rollouts=1, max_path_length=10, render=True, iterat
                 img = env.render('rgb_array', iteration)
             else:
                 img = None
-            obs, order, total_cost, delay_cost = env.vec_step(a)
-            R += total_cost
+            obs, reward, delay_cost = env.vec_step(a)
+            R += reward
             delay_c += delay_cost
             images.append(img)
     else:
@@ -93,8 +93,8 @@ def rollout(env, policy, num_rollouts=1, max_path_length=10, render=True, iterat
                 img = env.render('rgb_array', iteration)
             else:
                 img = None
-            obs, order, total_cost, delay_cost = env.step(a)
-            R += total_cost
+            obs, reward, delay_cost = env.step(a)
+            R += reward
             delay_c += delay_cost
             images.append(img)
     return np.sum(R)/num_rollouts, np.sum(delay_c)/num_rollouts, images
