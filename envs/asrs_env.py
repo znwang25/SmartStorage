@@ -186,7 +186,10 @@ class ASRSEnv(gym.Env):
                 labelleft=False)  # labels along the bottom edge are off
             self._ax.set_aspect('equal')
             self._canvas = FigureCanvas(self._fig)
-        current_map = self.storage_map.reshape(self.storage_shape)
+        if self._storage_maps is not None:
+            current_map = self._storage_maps[0].reshape(self.storage_shape)
+        else:
+            current_map = self.storage_map.reshape(self.storage_shape)
         data = self.cmap(self.dist_param[current_map-1]) 
         data = self.upsample(data,self._scale) 
         for ix,iy in np.ndindex(self.storage_shape):

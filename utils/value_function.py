@@ -31,6 +31,28 @@ class CNNValueFun(object):
         loss = self.model.fit(states, V_bar)
         print(loss)
 
+class FFNNValueFun(object):
+    def __init__(self, env, activation='relu'):
+        self._env = env
+        input_shape = env.state_shape
+        self._build((*input_shape,1), activation)
+    
+    def _build(self, input_shape, activation='relu', *args, **kwargs):
+        #create model
+        model = Sequential()
+        #add model layers
+        model.add(Dense(256,activation='relu'))
+        model.add(Dense(256,activation='relu'))
+        model.add(Dense(1,activation='linear'))
+        model.compile(optimizer='adam', loss='mean_squared_error')
+        self.model = model
+
+    def get_values(self, states):
+        return self.model.predict(states).reshape(-1)
+
+    def update(self, states, V_bar):
+        # loss = self.model.train_on_batch(states, V_bar,reset_metrics=False)
+        loss = self.model.fit(states, V_bar, verbose=0)
 
 class MLPValueFun(object):
     _activations = {
@@ -73,5 +95,7 @@ class MLPValueFun(object):
 
     def update(self, params):
         assert set(params.keys()) == set(self._params.keys())
+        loss = np.linalg.norm(V_hat_new-V_bar)
+        params = self.optimizer.grad_step(self.objective, params)
         self._params = params
 

@@ -6,7 +6,7 @@ from gym import spaces
 import time
 
 
-def plot_returns(returns,varname='total_cost'):
+def plot_returns(returns,varname='Return'):
     plt.close()
     plt.plot(range(len(returns)), returns)
     plt.xlabel("Iterations")

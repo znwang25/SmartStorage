@@ -46,7 +46,7 @@ class FunctionApproximateValueIteration(object):
                  learning_rate=0.1,
                  max_itr=2500,
                  log_itr=2,
-                 render_itr=50,
+                 render_itr=25,
                  num_rollouts=10,
                  render=True,
                  ):
@@ -112,12 +112,10 @@ class FunctionApproximateValueIteration(object):
         """
         states, next_states, rewards = self.get_states_and_transitions()
         num_acts, num_states = self.num_acts, self.batch_size
-        storage_maps = self.env.downsample(states[:num_states],self.env.scale).reshape(num_states,-1)
         Q = rewards + self.discount * self.value_fun.get_values(next_states)
         V_bar = Q.reshape([num_acts, num_states]).max(axis=0)
 
         states_distinct = states[:num_states]
-        # states_distinct = np.expand_dims(states_distinct, axis=-1)
         self.value_fun.update(states_distinct,V_bar)
 
     def get_states_and_transitions(self):

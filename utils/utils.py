@@ -20,13 +20,26 @@ class SimpleMaxPolicy(object):
         self.num_acts = env.num_actions
 
     def get_action(self, state):
+        if state.ndim ==self.env.obs_dim:
+            num_states = 1
+            states = np.array([state]*self.num_acts)
+        elif state.ndim == self.env.obs_dim +1:
+            num_states = state.shape[0]
+            states = np.tile(state.T, self.num_acts).T
+        else:
+            raise NotImplementedError
         actions = self.env.sample_actions(self.num_acts, all=True)
-        total_rewards = np.zeros(self.num_acts)
-        self.env.vec_set_state(np.array([state]*self.num_acts))
-        next_states, rewards, delay_costs = self.env.vec_step(actions)
+        rep_actions = np.repeat(actions, num_states, axis=0)
+        total_rewards = np.zeros(self.num_acts*num_states)
+        self.env.vec_set_state(states)
+        next_states, rewards, delay_costs = self.env.vec_step(rep_actions)
         total_rewards += rewards + (self.discount)*self._value_fun.get_values(next_states)
-        print(actions[np.argmax(total_rewards)])
-        return actions[np.argmax(total_rewards)]
+        total_rewards = total_rewards.reshape((self.num_acts, num_states))
+        if num_states == 1:
+            self.env.set_state(state)
+        else:
+            self.env.vec_set_state(state)
+        return actions[np.argmax(total_rewards,axis=0)]
 
 class TabularPolicy(object):
     def __init__(self, env):
