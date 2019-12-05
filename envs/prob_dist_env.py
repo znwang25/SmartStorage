@@ -43,10 +43,28 @@ class ProbDistEnv(object):
 
         self.num_maps = env.num_maps
         self.num_states = self.num_maps # To be changed
+        
         all_actions = list(itertools.combinations(range(self.num_products),2))+[None]
         self.num_actions = env.num_actions
         self.id_to_action_dict = dict(zip(range(self.num_actions),all_actions))
         self.vectorized = True
+
+        self.cumulative_order = np.zeros(self.num_products)
+        self._count = 0
+        self.p_hat = np.ones(self.num_products)/2
+
+    def update_order_stats(self, order):
+        self._count += 1
+        self.cumulative_order += order
+        self.p_hat = self.p_hat*(self._count-1)/self._count + 1/self._count * order
+
+    def vec_update_order_stats(self, orders):
+        self._count += orders.shape[0]
+        self.cumulative_order += orders.sum(axis=0)
+        p_new = orders.sum(axis=0) / orders.shape[0]
+        self.p_hat = ((self._count-orders.shape[0])/self._count) * self.p_hat + (orders.shape[0]/self._count) * p_new
+
+        print(self.p_hat)
 
     def step(self, action):
         if isinstance(action,np.ndarray):
@@ -72,12 +90,20 @@ class ProbDistEnv(object):
         p = self._wrapped_env.dist_param
         num_acts = actions.shape[0]
         next_storage_maps, orders, exchange_costs = self._wrapped_env.vec_step(actions)
-        delay_costs = ((self.discount/(1-self.discount)*(1-self.discount**self.distance))*p[next_storage_maps-1]).sum(axis=1)
-        # delay_costs = ((self.discount/(1-self.discount)*(1-self.discount**self.distance))*orders[np.repeat(np.arange(num_acts),orders.shape[1]).reshape(num_acts,-1),next_storage_maps[np.arange(num_acts)]-1]).sum(axis=1)
-        costs = delay_costs + self.exchange_cost_weight*exchange_costs
+        
+        self.vec_update_order_stats(orders)
+        delay_costs_hat = ((self.discount/(1-self.discount)*(1-self.discount**self.distance))*self.p_hat[next_storage_maps-1]).sum(axis=1)
+        costs_hat = delay_costs_hat + self.exchange_cost_weight*exchange_costs
+        rewards_hat = -costs_hat
         next_states = self.storage_map_to_state(next_storage_maps)
-        rewards = - costs
-        return next_states, rewards, delay_costs
+        return next_states, rewards_hat, delay_costs_hat
+
+        # delay_costs = ((self.discount/(1-self.discount)*(1-self.discount**self.distance))*p[next_storage_maps-1]).sum(axis=1)
+        # # delay_costs = ((self.discount/(1-self.discount)*(1-self.discount**self.distance))*orders[np.repeat(np.arange(num_acts),orders.shape[1]).reshape(num_acts,-1),next_storage_maps[np.arange(num_acts)]-1]).sum(axis=1)
+        # costs = delay_costs + self.exchange_cost_weight*exchange_costs
+        # rewards = - costs
+        # next_states = self.storage_map_to_state(next_storage_maps)
+        # return next_states, rewards, delay_costs
 
     def set_state(self, state):
         storage_map = self.state_to_storage_map(state)

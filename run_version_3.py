@@ -4,6 +4,8 @@ import logger
 import json
 import numpy as np
 from logger import DEBUG, INFO, WARN, ERROR, DISABLED 
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 def main(args):
     render = args.render
