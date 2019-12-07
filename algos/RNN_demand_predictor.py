@@ -1,11 +1,17 @@
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, Flatten
 from keras.layers import LSTM
 from keras.layers import Dropout
 
 num_product = 10
 len_order_sequence = 10000
+
+temp_list = []
+order_sequence = np.zeros((len_order_sequence, num_product))
+for i, p in enumerate(np.linspace(0.1,0.9,11)[1:]):
+    temp_list.append(np.random.binomial(1, p, (len_order_sequence,)))
+order_sequence = np.vstack(temp_list).T
 
 order_sequence = np.random.binomial(1, 0.5, (len_order_sequence, num_product))
 look_back = 1000
@@ -50,9 +56,22 @@ model.add(Dropout(0.2))
 model.add(Dense(units = num_product, activation="sigmoid"))
 model.compile(optimizer = 'adam', loss = 'binary_crossentropy')
 
-model.fit(features_set, labels, epochs = 50, batch_size = 100)
+model.fit(features_set, labels, epochs = 2, batch_size = 200)
 
-a = np.random.binomial(1, 0.5, (len_order_sequence, num_product))
-test_features = sliding_window(a, look_back)
+
+test_sequence = np.random.binomial(1, 0.5, (2000, num_product))
+test_features = sliding_window(test_sequence, look_back)
+
+len_test_sequence = 2000
+tt = []
+test_sequence = np.zeros((len_test_sequence, num_product))
+for i, p in enumerate(np.linspace(0.1,0.9,11)[1:]):
+    tt.append(np.random.binomial(1, p, (len_test_sequence,)))
+test_sequence = np.vstack(tt).T
+test_features = sliding_window(test_sequence, look_back)
+
 
 predictions = model.predict(test_features)
+import seaborn as sns
+for i in range(10):
+    sns.kdeplot(predictions[:,i])
