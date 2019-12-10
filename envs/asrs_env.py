@@ -48,7 +48,7 @@ class ASRSEnv(gym.Env):
         'video.frames_per_second': 30
     }
 
-    def __init__(self, storage_shape, dist_param=None, origin_coord=None, rho=0.99, seed=42):
+    def __init__(self, storage_shape, dist_param=None, dynamic_order = False, season_length = 500, origin_coord=None, beta=0.8, rho=0.99, seed=42):
         self.seed(seed)
         assert len(storage_shape) <= 3, "storage_shape length should be <= 3"
         self.storage_shape = storage_shape
@@ -64,12 +64,15 @@ class ASRSEnv(gym.Env):
             # Default is (0,0,0)
         self.dist_origin_to_exit = 1 # Distance from origin to exit
 
+        self.dynamic_order = dynamic_order
         if dist_param == None: 
             self.dist_param = np.array([0.05]*self.num_products)
         else:
             self.dist_param = np.array(dist_param)
-
-        self.long_term_2p = np.random.uniform(self.num_products)
+    
+        self.long_term_2p = np.random.rand(self.num_products,)
+        self.season_length = season_length
+        self.beta = beta
         self.rho = rho
 
         self.reset()
@@ -127,28 +130,29 @@ class ASRSEnv(gym.Env):
     def get_distance_between_coord(self, coord1, coord2):
         return np.abs(np.array(coord1)-np.array(coord2)).sum(axis=0)
 
-    def get_orders(self, num_envs=1, dynamic=False):
-        if dynamic:
-            self.dist_param = self.rho * self.dist_param + \
+    def get_orders(self, num_envs=1):
+        if self.dynamic_order:
+            self.dist_param = self.beta * self.long_term_2p/2 + (1-self.beta) * (self.rho * self.dist_param + \
                 (1 - self.rho) * self.long_term_2p * \
-                np.random.uniform(self.num_products)
+                np.random.rand(self.num_products,))
             print(f'Dynamic p: {self.dist_param}')
-        if num_envs == 1:
-            order = np.random.binomial(1, self.dist_param)
-        else:
-            order = np.repeat(np.random.binomial(1, self.dist_param), num_envs).reshape((self.num_products, num_envs)).T
-            # order = np.random.binomial(1, np.repeat(self.dist_param, num_envs).reshape((self.num_products, num_envs))).T
+        order = np.random.binomial(1, self.dist_param)
+        if num_envs != 1:
+            order = np.repeat(order, num_envs).reshape((self.num_products, num_envs)).T
         return order
 
-    def get_dynamic_order_sequence(self, num_period=1):
+    def get_order_sequence(self, num_period=1):
+        # Can only generate order sequences for 1 environments
         order_sequence = np.zeros((num_period, self.num_products))
+        p_sequence = np.zeros((num_period, self.num_products))
         for t in range(num_period):
-            self.dist_param = self.rho * self.dist_param + \
-                (1 - self.rho) * self.long_term_2p * \
-                np.random.uniform(self.num_products)
-            order = np.random.binomial(1, self.dist_param)
-            order_sequence[t,:] = order
-        return order_sequence
+            if t % self.season_length == 0:
+                self.long_term_2p = np.random.rand(self.num_products,)
+                print('Season Change! New long term 2p: {}'.format(self.long_term_2p))
+            order = self.get_orders(num_envs=1)
+            order_sequence[t] = order
+            p_sequence[t] = self.dist_param
+        return order_sequence, p_sequence
 
     def step(self, action=None):
         '''
