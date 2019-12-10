@@ -29,10 +29,11 @@ class DynamicProbEnv(object):
 
     def __init__(self,
                  env,
-                 RNN_demand_predictor=None,
-                 alpha=1, discount=0.99, RNN_order_len=1000):
-        logger.info("Initiating ProbDistEnv")
+                 RNN_demand_predictor,
+                 alpha=1, discount=0.99):
+        logger.info("Initiating DynamicProbEnv")
         self._wrapped_env = env
+        self.RNN_demand_predictor = RNN_demand_predictor
         self.num_products = env.num_products
         self.storage_shape = env.storage_shape
         self.state_shape = (
@@ -55,11 +56,12 @@ class DynamicProbEnv(object):
             zip(range(self.num_actions), all_actions))
         self.vectorized = True
 
-        self.order_history = self._wrapped_env.get_dynamic_order_sequence(num_period=RNN_order_len)
-        self.p_hat = RNN_demand_predictor(self.order_history)
+        self.order_history, _ = self._wrapped_env.get_order_sequence(num_period=RNN_demand_predictor.look_back)
+        self.p_hat = np.squeeze(self.RNN_demand_predictor.get_predicted_p(self.order_history))
 
     def update_order_history(self, order):
         self.order_history = np.vstack([self.order_history, order])[1:]
+        self.p_hat = np.squeeze(self.RNN_demand_predictor.get_predicted_p(self.order_history))
 
     def step(self, action):
         if isinstance(action, np.ndarray):
@@ -86,9 +88,7 @@ class DynamicProbEnv(object):
         num_acts = actions.shape[0]
         next_storage_maps, orders, exchange_costs = self._wrapped_env.vec_step(
             actions)
-
-        self.update_order_history(order)
-        self.p_hat = RNN_demand_predictor(self.order_history)
+        self.update_order_history(orders[0])
         
         delay_costs_hat = ((self.discount/(1-self.discount)*(1-self.discount **
                                                              self.distance))*self.p_hat[next_storage_maps-1]).sum(axis=1)
@@ -118,7 +118,7 @@ class DynamicProbEnv(object):
             np.expand_dims(inverse_perm, axis=-2), self.num_products, axis=-2), axis=-1)
         GGdist_upper_tri = GGdist.T[np.triu_indices(self.num_products, k=1)].T
         good_to_exit = self.distance[storage_maps-1]
-        p = self._wrapped_env.dist_param[storage_maps-1]
+        p = self.p_hat[storage_maps-1]
         states = np.hstack([p, good_to_exit, GGdist_upper_tri, storage_maps])
         return states
 

@@ -5,10 +5,11 @@ from keras.layers import LSTM
 from keras.layers import Dropout
 import matplotlib.pyplot as plt
 
-class RNNPredictor(object):
-    def __init__(self, env, look_back=1000, init_num_period = 10000):
+class RNNDemandPredictor(object):
+    def __init__(self, env, look_back=1000, init_num_period = 10000, epochs= 2):
         self._env = env
         self.look_back = look_back
+        self.epochs = epochs
         self.num_products = env.num_products
         order_sequence, _ = env.get_order_sequence(num_period=init_num_period)
         self._build()
@@ -51,24 +52,42 @@ class RNNPredictor(object):
         return np.lib.stride_tricks.as_strided(arr, shape=(num_entries,window_len,n), strides=(s0,s0,s1))
 
     def get_predicted_p(self, features_set):
+        if features_set.ndim == 2:
+            features_set = np.expand_dims(features_set,axis=0)
         return self.model.predict(features_set)
 
     def update(self, order_sequence):
         features_set, labels = self._preprocess_data(order_sequence)
-        loss = self.model.fit(features_set, labels, epochs = 2, batch_size = 200)
+        loss = self.model.fit(features_set, labels, epochs = self.epochs, batch_size = 200)
     
-    def test_performance_plot(self, test_num_period):
+    def test_performance_plot(self, test_num_period, save_to = None):
         test_order_sequence, test_p_sequence = self._env.get_order_sequence(num_period=test_num_period)
         test_features_set, _ = self._preprocess_data(test_order_sequence)
         test_p_sequence_hat = self.get_predicted_p(test_features_set)
         test_p_sequence = test_p_sequence[self.look_back:]
         plt.clf()
+        plt.figure(figsize=(50,10))
         for i in range(self.num_products):
             color = np.random.rand(3,)
             print(color)
             plt.plot(test_p_sequence[:,i], c=color, linestyle='-')  
-            plt.plot(test_p_sequence_hat[:,i], c=color, linestyle=':')  
-        plt.show()
+            plt.plot(test_p_sequence_hat[:,i], c=color, linestyle=':')
+        plt.xlabel("t")
+        plt.ylabel("p")
+        if save_to:
+            plt.savefig('%s/rnn_performance_plot.png' % (save_to))
+        else:
+            plt.show()
+
+    
+
+class TruePPredictor(object):
+    def __init__(self, env):
+        self._env = env
+        self.look_back = 1
+
+    def get_predicted_p(self, features_set):
+        return self._env.dist_param
     
 
 # test_order_sequence, test_p_sequence = a.get_order_sequence(num_period=2000)

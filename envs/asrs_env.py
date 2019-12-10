@@ -73,6 +73,7 @@ class ASRSEnv(gym.Env):
         self.num_distinct_season = 4
         self.long_term_2p = np.random.rand(self.num_distinct_season, self.num_products)
         self.season_length = season_length
+        self.age = 0
         self.beta = beta
         self.rho = rho
 
@@ -94,6 +95,7 @@ class ASRSEnv(gym.Env):
     def reset(self):
         self._storage_maps = None
         self._num_envs = None
+        self.age = 0
         self.storage_map = np.random.permutation(self.num_products)+1
         return np.array(self.storage_map).copy()
 
@@ -104,6 +106,7 @@ class ASRSEnv(gym.Env):
         else:
             self._num_envs = num_envs
         self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))+1
+        self.age = 0
         return np.array(self._storage_maps).copy()
 
     def get_bin_coordinate(self,bin_id):
@@ -131,14 +134,14 @@ class ASRSEnv(gym.Env):
     def get_distance_between_coord(self, coord1, coord2):
         return np.abs(np.array(coord1)-np.array(coord2)).sum(axis=0)
 
-    def get_orders(self, num_envs=1, season = None):
+    def get_orders(self, num_envs=1):
         if self.dynamic_order:
-            if season is None:
-                raise BaseException("Please specify season number for dynamic order process.")
+            season = (self.age // self.season_length) % self.num_distinct_season
             self.dist_param = self.beta * self.long_term_2p[season]/2 + (1-self.beta) * (self.rho * self.dist_param + \
                 (1 - self.rho) * self.long_term_2p[season] * \
                 np.random.rand(self.num_products,))
-            print(f'Dynamic p: {self.dist_param}')
+            self.age += 1
+            # print(f'Dynamic p: {self.dist_param}')
         order = np.random.binomial(1, self.dist_param)
         if num_envs != 1:
             order = np.repeat(order, num_envs).reshape((self.num_products, num_envs)).T
@@ -149,7 +152,7 @@ class ASRSEnv(gym.Env):
         order_sequence = np.zeros((num_period, self.num_products))
         p_sequence = np.zeros((num_period, self.num_products))
         for t in range(num_period):
-            order = self.get_orders(num_envs=1, season = (t // self.season_length)% self.num_distinct_season)
+            order = self.get_orders(num_envs=1)
             order_sequence[t] = order
             p_sequence[t] = self.dist_param
         return order_sequence, p_sequence
