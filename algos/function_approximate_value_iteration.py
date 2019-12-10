@@ -120,11 +120,13 @@ class FunctionApproximateValueIteration(object):
 
     def get_states_and_transitions(self):
         num_acts, num_states = self.num_acts, self.batch_size
-        states = self.env.sample_states(num_states)
+        states, p_next = self.env.sample_states(num_states)
         actions = self.env.sample_actions(num_acts, all=True)
 
         states = np.tile(states.T, num_acts).T
         actions = np.repeat(actions, num_states, axis=0)
+        p_next = np.repeat(actions, num_states, axis=0)
+        ????
         self.env.vec_set_state(states)
-        next_states, rewards, delay_costs = self.env.vec_step(actions)
+        next_states, rewards, delay_costs = self.env.vec_step(actions, p_next)
         return states, next_states, rewards

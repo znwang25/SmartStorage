@@ -11,9 +11,13 @@ class RNNDemandPredictor(object):
         self.look_back = look_back
         self.epochs = epochs
         self.num_products = env.num_products
+        self.init_num_period = init_num_period
         order_sequence, _ = env.get_order_sequence(num_period=init_num_period)
+        self.order_sequence_buffer = order_sequence
         self._build()
-        self.update(order_sequence)
+        self.update(self.order_sequence_buffer)
+        buffer_features_set, _ = self._preprocess_data(self.order_sequence_buffer)
+        self.buffer_p_sequence_hat = self.get_predicted_p(buffer_features_set)
 
     def _build(self):
         model = Sequential()

@@ -30,6 +30,7 @@ class DynamicProbEnv(object):
     def __init__(self,
                  env,
                  RNN_demand_predictor,
+                 num_p_in_states = 10, 
                  alpha=1, discount=0.99):
         logger.info("Initiating DynamicProbEnv")
         self._wrapped_env = env
@@ -48,6 +49,7 @@ class DynamicProbEnv(object):
 
         self.num_maps = env.num_maps
         self.num_states = self.num_maps  # To be changed
+        self.num_p_in_states = num_p_in_states
 
         all_actions = list(itertools.combinations(
             range(self.num_products), 2))+[None]
@@ -84,17 +86,20 @@ class DynamicProbEnv(object):
         next_states = self.storage_map_to_state(next_storage_maps)
         return next_states
 
-    def vec_step(self, actions):
+    def vec_step(self, actions, p_next= None):
         num_acts = actions.shape[0]
         next_storage_maps, orders, exchange_costs = self._wrapped_env.vec_step(
             actions)
         self.update_order_history(orders[0])
-        
+        if p_next is None:
+            p_hat = self.p_hat
+        else:
+            p_hat = p_next[:,-1,:].reshape(p_next.shape[0],-1)
         delay_costs_hat = ((self.discount/(1-self.discount)*(1-self.discount **
-                                                             self.distance))*self.p_hat[next_storage_maps-1]).sum(axis=1)
+                                                             self.distance))*p_hat[next_storage_maps-1]).sum(axis=1)
         costs_hat = delay_costs_hat + self.exchange_cost_weight*exchange_costs
         rewards_hat = -costs_hat
-        next_states = self.storage_map_to_state(next_storage_maps)
+        next_states = self.storage_map_to_state(next_storage_maps, p_next.reshape(p_next.shape[0],-1))
         return next_states, rewards_hat, delay_costs_hat
 
         # delay_costs = ((self.discount/(1-self.discount)*(1-self.discount**self.distance))*p[next_storage_maps-1]).sum(axis=1)
@@ -112,13 +117,12 @@ class DynamicProbEnv(object):
         storage_maps = self.state_to_storage_map(states)
         self._wrapped_env.vec_set_state(storage_maps)
 
-    def storage_map_to_state(self, storage_maps):
+    def storage_map_to_state(self, storage_maps, p):
         inverse_perm = np.arange(self.num_products)[np.argsort(storage_maps)]
         GGdist = np.take_along_axis(self.dist_matrix[inverse_perm], np.repeat(
             np.expand_dims(inverse_perm, axis=-2), self.num_products, axis=-2), axis=-1)
         GGdist_upper_tri = GGdist.T[np.triu_indices(self.num_products, k=1)].T
         good_to_exit = self.distance[storage_maps-1]
-        p = self.p_hat[storage_maps-1]
         states = np.hstack([p, good_to_exit, GGdist_upper_tri, storage_maps])
         return states
 
@@ -128,7 +132,12 @@ class DynamicProbEnv(object):
     def sample_states(self, batch_size):
         storage_maps = np.vstack(
             list(map(np.random.permutation, [self.num_products]*batch_size)))+1
-        return self.storage_map_to_state(storage_maps)
+        p_features_set = self.RNN_demand_predictor.sliding_window(self.RNN_demand_predictor.buffer_p_sequence_hat,self.num_p_in_states+1)
+        ind = np.random.choice(p_features_set.shape[0], batch_size, replace = True)
+        sampled_p = p_features_set[ind]
+        p_current = sampled_p[:,:-1,:].reshape((batch_size,-1))
+        p_next = sampled_p[:,1:,:]
+        return self.storage_map_to_state(storage_maps, p_current), p_next
 
     def sample_actions(self, num_acts, all=False):
         if all:
