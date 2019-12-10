@@ -70,7 +70,8 @@ class ASRSEnv(gym.Env):
         else:
             self.dist_param = np.array(dist_param)
     
-        self.long_term_2p = np.random.rand(self.num_products,)
+        self.num_distinct_season = 4
+        self.long_term_2p = np.random.rand(self.num_distinct_season, self.num_products)
         self.season_length = season_length
         self.beta = beta
         self.rho = rho
@@ -130,10 +131,12 @@ class ASRSEnv(gym.Env):
     def get_distance_between_coord(self, coord1, coord2):
         return np.abs(np.array(coord1)-np.array(coord2)).sum(axis=0)
 
-    def get_orders(self, num_envs=1):
+    def get_orders(self, num_envs=1, season = None):
         if self.dynamic_order:
-            self.dist_param = self.beta * self.long_term_2p/2 + (1-self.beta) * (self.rho * self.dist_param + \
-                (1 - self.rho) * self.long_term_2p * \
+            if season is None:
+                raise BaseException("Please specify season number for dynamic order process.")
+            self.dist_param = self.beta * self.long_term_2p[season]/2 + (1-self.beta) * (self.rho * self.dist_param + \
+                (1 - self.rho) * self.long_term_2p[season] * \
                 np.random.rand(self.num_products,))
             print(f'Dynamic p: {self.dist_param}')
         order = np.random.binomial(1, self.dist_param)
@@ -146,10 +149,7 @@ class ASRSEnv(gym.Env):
         order_sequence = np.zeros((num_period, self.num_products))
         p_sequence = np.zeros((num_period, self.num_products))
         for t in range(num_period):
-            if t % self.season_length == 0:
-                self.long_term_2p = np.random.rand(self.num_products,)
-                print('Season Change! New long term 2p: {}'.format(self.long_term_2p))
-            order = self.get_orders(num_envs=1)
+            order = self.get_orders(num_envs=1, season = (t // self.season_length)% self.num_distinct_season)
             order_sequence[t] = order
             p_sequence[t] = self.dist_param
         return order_sequence, p_sequence

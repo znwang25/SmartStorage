@@ -71,13 +71,13 @@ class RNNPredictor(object):
         plt.show()
     
 
-test_order_sequence, test_p_sequence = a.get_order_sequence(num_period=2000)
-test_features_set, _ = rnn._preprocess_data(test_order_sequence)
-test_p_sequence_hat = rnn.get_predicted_p(test_features_set)
-test_p_sequence = test_p_sequence[rnn.look_back:]
-for i in range(3):
-    color = np.random.rand(3,)
-    print(color)
-    plt.plot(test_p_sequence[:,i], c=color, linestyle='-')  
-    # plt.plot(test_p_sequence_hat[:,i], c=color, linestyle=':')  
-plt.show()
+# test_order_sequence, test_p_sequence = a.get_order_sequence(num_period=2000)
+# test_features_set, _ = rnn._preprocess_data(test_order_sequence)
+# test_p_sequence_hat = rnn.get_predicted_p(test_features_set)
+# test_p_sequence = test_p_sequence[rnn.look_back:]
+# for i in range(3):
+#     color = np.random.rand(3,)
+#     print(color)
+#     plt.plot(test_p_sequence[:,i], c=color, linestyle='-')  
+#     # plt.plot(test_p_sequence_hat[:,i], c=color, linestyle=':')  
+# plt.show()
