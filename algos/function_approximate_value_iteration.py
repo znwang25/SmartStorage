@@ -49,6 +49,7 @@ class FunctionApproximateValueIteration(object):
                  render_itr=25,
                  num_rollouts=10,
                  render=True,
+                 last_max_path_length = 600
                  ):
         self.env = env
         self.discount = env.discount
@@ -62,6 +63,7 @@ class FunctionApproximateValueIteration(object):
         self.num_acts = self.env.num_actions
         self.render_itr = render_itr
         self.render = render
+        self.last_max_path_length = last_max_path_length
 
     def train(self):
         # params = self.value_fun._params
@@ -102,6 +104,11 @@ class FunctionApproximateValueIteration(object):
             clip = mpy.ImageSequenceClip(videos, fps=fps)
             clip.write_videofile('%s/learning_progress.mp4' % logger.get_dir())
 
+        itr = self.max_itr
+        average_return, avg_delay_cost, final_itr_video = rollout(self.env, self.policy, num_rollouts=2, render=True, iteration=itr,last_max_path_length=self.last_max_path_length, last_iteration=True)
+
+        final_clip = mpy.ImageSequenceClip(final_itr_video, fps=40)
+        final_clip.write_videofile('%s/final_rollout.mp4' % logger.get_dir())
         plt.close()
 
     def value_fun_update(self):
@@ -125,8 +132,7 @@ class FunctionApproximateValueIteration(object):
 
         states = np.tile(states.T, num_acts).T
         actions = np.repeat(actions, num_states, axis=0)
-        p_next = np.repeat(actions, num_states, axis=0)
-        ????
+        p_next = np.tile(p_next.T, num_acts).T 
         self.env.vec_set_state(states)
         next_states, rewards, delay_costs = self.env.vec_step(actions, p_next)
         return states, next_states, rewards

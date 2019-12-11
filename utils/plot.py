@@ -8,6 +8,7 @@ import time
 
 def plot_returns(returns,varname='Return'):
     plt.close()
+    plt.clf()
     plt.plot(range(len(returns)), returns)
     plt.xlabel("Iterations")
     plt.ylabel("Average %s" % varname)
@@ -69,22 +70,30 @@ def plot_contour(env, value_fun, save=False, fig=None, iteration=None):
     return image, fig
 
 
-def rollout(env, policy, num_rollouts=1, max_path_length=10, render=True, iteration=None):
+def rollout(env, policy, num_rollouts=1, max_path_length=10, last_max_path_length=600, render=True, iteration=None, last_iteration=False):
     R = 0.
     delay_c = 0.
     images = []
+    if last_iteration:
+        max_path_length = last_max_path_length
+        print("This is last rollout!")
     if num_rollouts > 1:
         obs = env.vec_reset(num_rollouts)
+        # print(f'long term p: {env.long_term_2p/2}')
         for t in range(max_path_length):
+            if last_iteration and t%20==1:
+                print('\r Percentage finished: {}%'.format(round(t/last_max_path_length*100),1), end="")
             a = policy.get_action(obs)
             if render:
                 img = env.render('rgb_array', iteration)
             else:
                 img = None
-            obs, reward, delay_cost = env.vec_step(a)
+            obs, reward, delay_cost = env.vec_rollout_step(a)
+            # print(f'Dynamic p: {env.dist_param}')
             R += reward
             delay_c += delay_cost
             images.append(img)
+        print('\n')
     else:
         obs = env.reset()
         for t in range(max_path_length):
@@ -94,6 +103,7 @@ def rollout(env, policy, num_rollouts=1, max_path_length=10, render=True, iterat
             else:
                 img = None
             obs, reward, delay_cost = env.step(a)
+            print(f'Dynamic p: {env.dist_param}')
             R += reward
             delay_c += delay_cost
             images.append(img)

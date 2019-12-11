@@ -21,21 +21,20 @@ def main(args):
     assert np.array(eval(args.storage_shape)).prod() == len(eval(args.dist_param)), 'storage_shape should be consistent with dist_param length'
     base_env = ASRSEnv(eval(args.storage_shape), origin_coord=eval(args.exit_coord), dist_param = eval(args.dist_param),dynamic_order = args.dynamic_order, season_length = 500, beta=0.8, rho=0.99)
     if args.true_p:
-        true_p = TruePPredictor(base_env)
-        env = DynamicProbEnv(base_env,RNN_demand_predictor = true_p, alpha=1)
+        true_p = TruePPredictor(base_env, look_back=args.rnn_lookback, dynamic=args.dynamic_order, init_num_period = args.rnn_init_num_period, num_p_in_states = args.num_p_in_states)
+        env = DynamicProbEnv(base_env,RNN_demand_predictor = true_p, alpha=1, num_p_in_states = args.num_p_in_states)
     else:
         rnn = RNNDemandPredictor(base_env,look_back=args.rnn_lookback, init_num_period = args.rnn_init_num_period, epochs = args.rnn_epoch)
-        env = DynamicProbEnv(base_env,RNN_demand_predictor = rnn, alpha=1)
+        env = DynamicProbEnv(base_env,RNN_demand_predictor = rnn, alpha=1, num_p_in_states = args.num_p_in_states)
 
     env_name = env.__name__
     exp_dir = os.getcwd() + '/data/version4/%s/policy_type%s_envsize_%s_dynamic_%s_p_hat_%s/' % (env_name, args.policy_type,np.array(eval(args.storage_shape)).prod(), args.dynamic_order, not args.true_p)
-    if not args.true_p:
-        rnn.test_performance_plot(4000, save_to=exp_dir)
-
     logger.configure(dir=exp_dir, format_strs=['stdout', 'log', 'csv'], level=eval(args.logger_level))
     args_dict = vars(args)
     args_dict['env'] = env_name
     json.dump(vars(args), open(exp_dir + '/params.json', 'w'), indent=2, sort_keys=True)
+    if not args.true_p:
+        rnn.test_performance_plot(4000, save_to=exp_dir)
 
     value_fun = FFNNValueFun(env)
     policy = SimpleMaxPolicy(env,
@@ -55,7 +54,8 @@ def main(args):
                             render=render,
                             num_rollouts = args.num_rollouts,
                             max_itr=args.max_iter,
-                            log_itr=5)
+                            log_itr=5,
+                            last_max_path_length=args.last_max_path_length)
     algo.train()
 
 
@@ -89,8 +89,12 @@ if __name__ == "__main__":
                         help='Number of period lookback for RNN training')
     parser.add_argument("--rnn_init_num_period", type=int, default=20000,
                         help='Number of initial period used to train RNN')
+    parser.add_argument("--last_max_path_length", "-lmp", type=int, default=600,
+                        help='Number of period used for final video')
     parser.add_argument("--rnn_epoch", type=int, default=2,
                         help='Number of epoch used to train RNN')
+    parser.add_argument("--num_p_in_states", type=int, default=10,
+                        help='Number of period of p used in value function')
     parser.add_argument("--dynamic_order", "-d", action='store_true', help="Use dynamic order process")
     parser.add_argument("--true_p", "-tp", action='store_true', help="Use real p")
 
