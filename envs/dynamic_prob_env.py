@@ -37,8 +37,13 @@ class DynamicProbEnv(object):
         self.demand_predictor = demand_predictor
         self.num_products = env.num_products
         self.storage_shape = env.storage_shape
+        # self.state_shape = (
+        #     int(self.num_products*(2+num_p_in_states) + self.num_products*(self.num_products-1)/2),)
+        # self.state_shape = (
+        #     int(self.num_products*(2+num_p_in_states)),)
         self.state_shape = (
-            int(self.num_products*(2+num_p_in_states) + self.num_products*(self.num_products-1)/2),)
+            int(self.num_products*(1+num_p_in_states)),)
+
         self.obs_dim = 1
         self.exchange_cost_weight = alpha
         self.discount = discount
@@ -142,11 +147,13 @@ class DynamicProbEnv(object):
 
     def storage_map_to_state(self, storage_maps, p):
         inverse_perm = np.arange(self.num_products)[np.argsort(storage_maps)]
-        GGdist = np.take_along_axis(self.dist_matrix[inverse_perm], np.repeat(
-            np.expand_dims(inverse_perm, axis=-2), self.num_products, axis=-2), axis=-1)
-        GGdist_upper_tri = GGdist.T[np.triu_indices(self.num_products, k=1)].T
+        # GGdist = np.take_along_axis(self.dist_matrix[inverse_perm], np.repeat(
+        #     np.expand_dims(inverse_perm, axis=-2), self.num_products, axis=-2), axis=-1)
+        # GGdist_upper_tri = GGdist.T[np.triu_indices(self.num_products, k=1)].T
         good_to_exit = self.distance[storage_maps-1]
-        states = np.hstack([p, good_to_exit, GGdist_upper_tri, storage_maps])
+        # states = np.hstack([p, good_to_exit, GGdist_upper_tri, storage_maps])
+        # states = np.hstack([p, good_to_exit, storage_maps])
+        states = np.hstack([p, storage_maps])
         return states
 
     def state_to_storage_map(self, states):

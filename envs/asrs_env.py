@@ -233,7 +233,7 @@ class ASRSEnv(gym.Env):
         else:
             current_map = self.storage_map.reshape(self.storage_shape)
         if self.dynamic_order:
-            data = self.cmap(self.long_term_2p[self.season][current_map-1])/2
+            data = self.cmap((self.long_term_2p[self.season]/2)[current_map-1])
         else:
             data = self.cmap(self.dist_param[current_map-1]) 
         data = self.upsample(data,self._scale) 

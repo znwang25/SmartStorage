@@ -28,13 +28,13 @@ def main(args):
         env = DynamicProbEnv(base_env,demand_predictor = rnn, alpha=1, num_p_in_states = args.num_p_in_states)
 
     env_name = env.__name__
-    exp_dir = os.getcwd() + '/data/version4/%s/policy_type%s_envsize_%s_dynamic_%s_p_hat_%s/' % (env_name, args.policy_type,np.array(eval(args.storage_shape)).prod(), args.dynamic_order, not args.true_p)
+    exp_dir = os.getcwd() + '/data/version4/%s/policy_type%s_envsize_%s_dynamic_%s_p_hat_%s_%s/' % (env_name, args.policy_type,np.array(eval(args.storage_shape)).prod(), args.dynamic_order, not args.true_p, args.exp_name)
     logger.configure(dir=exp_dir, format_strs=['stdout', 'log', 'csv'], level=eval(args.logger_level))
     args_dict = vars(args)
     args_dict['env'] = env_name
     json.dump(vars(args), open(exp_dir + '/params.json', 'w'), indent=2, sort_keys=True)
     if not args.true_p:
-        rnn.test_performance_plot(4000, save_to=exp_dir)
+        rnn.test_performance_plot(2000, save_to=exp_dir)
 
     value_fun = FFNNValueFun(env)
     policy = SimpleMaxPolicy(env,
@@ -97,6 +97,7 @@ if __name__ == "__main__":
                         help='Number of period of p used in value function')
     parser.add_argument("--dynamic_order", "-d", action='store_true', help="Use dynamic order process")
     parser.add_argument("--true_p", "-tp", action='store_true', help="Use real p")
+    parser.add_argument("--exp_name", type=str,default='', help="Experiment name")
 
     args = parser.parse_args()
     main(args)
