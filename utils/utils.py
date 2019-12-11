@@ -32,7 +32,8 @@ class SimpleMaxPolicy(object):
         rep_actions = np.repeat(actions, num_states, axis=0)
         total_rewards = np.zeros(self.num_acts*num_states)
         self.env.vec_set_state(states)
-        next_states, rewards, delay_costs = self.env.vec_step(rep_actions, freeze_age = True)
+        p_current = self.env.state_to_p_state(states)
+        next_states, rewards, delay_costs = self.env.vec_step(rep_actions, p_next=p_current, no_orders = True)
         total_rewards += rewards + (self.discount)*self._value_fun.get_values(next_states)
         total_rewards = total_rewards.reshape((self.num_acts, num_states))
         if num_states == 1:

@@ -19,13 +19,13 @@ def main(args):
     from envs import ASRSEnv, ProbDistEnv, DynamicProbEnv
 
     assert np.array(eval(args.storage_shape)).prod() == len(eval(args.dist_param)), 'storage_shape should be consistent with dist_param length'
-    base_env = ASRSEnv(eval(args.storage_shape), origin_coord=eval(args.exit_coord), dist_param = eval(args.dist_param),dynamic_order = args.dynamic_order, season_length = 500, beta=0.8, rho=0.99)
+    base_env = ASRSEnv(eval(args.storage_shape), origin_coord=eval(args.exit_coord), dist_param = eval(args.dist_param),dynamic_order = args.dynamic_order, season_length = 500, beta=1, rho=0.99)
     if args.true_p:
         true_p = TruePPredictor(base_env, look_back=args.rnn_lookback, dynamic=args.dynamic_order, init_num_period = args.rnn_init_num_period, num_p_in_states = args.num_p_in_states)
-        env = DynamicProbEnv(base_env,RNN_demand_predictor = true_p, alpha=1, num_p_in_states = args.num_p_in_states)
+        env = DynamicProbEnv(base_env,demand_predictor = true_p, alpha=1, num_p_in_states = args.num_p_in_states)
     else:
         rnn = RNNDemandPredictor(base_env,look_back=args.rnn_lookback, init_num_period = args.rnn_init_num_period, epochs = args.rnn_epoch)
-        env = DynamicProbEnv(base_env,RNN_demand_predictor = rnn, alpha=1, num_p_in_states = args.num_p_in_states)
+        env = DynamicProbEnv(base_env,demand_predictor = rnn, alpha=1, num_p_in_states = args.num_p_in_states)
 
     env_name = env.__name__
     exp_dir = os.getcwd() + '/data/version4/%s/policy_type%s_envsize_%s_dynamic_%s_p_hat_%s/' % (env_name, args.policy_type,np.array(eval(args.storage_shape)).prod(), args.dynamic_order, not args.true_p)
@@ -87,7 +87,7 @@ if __name__ == "__main__":
                         help='Number of actions sampled for maximizing the value function')
     parser.add_argument("--rnn_lookback", type=int, default=1000,
                         help='Number of period lookback for RNN training')
-    parser.add_argument("--rnn_init_num_period", type=int, default=20000,
+    parser.add_argument("--rnn_init_num_period", type=int, default=10000,
                         help='Number of initial period used to train RNN')
     parser.add_argument("--last_max_path_length", "-lmp", type=int, default=600,
                         help='Number of period used for final video')

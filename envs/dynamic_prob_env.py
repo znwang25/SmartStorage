@@ -29,12 +29,12 @@ class DynamicProbEnv(object):
 
     def __init__(self,
                  env,
-                 RNN_demand_predictor,
+                 demand_predictor,
                  num_p_in_states = 10, 
                  alpha=1, discount=0.99):
         logger.info("Initiating DynamicProbEnv")
         self._wrapped_env = env
-        self.RNN_demand_predictor = RNN_demand_predictor
+        self.demand_predictor = demand_predictor
         self.num_products = env.num_products
         self.storage_shape = env.storage_shape
         self.state_shape = (
@@ -57,15 +57,15 @@ class DynamicProbEnv(object):
         self.id_to_action_dict = dict(
             zip(range(self.num_actions), all_actions))
         self.vectorized = True
-        self.rnn_lookback = RNN_demand_predictor.look_back
-        self.order_history, _ = self._wrapped_env.get_order_sequence(num_period=RNN_demand_predictor.look_back+self.num_p_in_states)
-        self.p_state = self.RNN_demand_predictor.get_predicted_p(self.order_history, preprocess = True)
-        self.p_features_set = self.RNN_demand_predictor.sliding_window(self.RNN_demand_predictor.buffer_p_sequence_hat,self.num_p_in_states+1)
+        self.rnn_lookback = demand_predictor.look_back
+        self.order_history, _ = self._wrapped_env.get_order_sequence(num_period=demand_predictor.look_back+self.num_p_in_states)
+        self.p_state = self.demand_predictor.get_predicted_p(self.order_history, preprocess = True)
+        self.p_features_set = self.demand_predictor.sliding_window(self.demand_predictor.buffer_p_sequence_hat,self.num_p_in_states+1)
         self.p_state_init = self.p_state # The p value to reset to.
 
     def update_order_history(self, order):
         self.order_history = np.vstack([self.order_history, order])[1:]
-        self.p_state = np.vstack([self.p_state, self.RNN_demand_predictor.get_predicted_p(self.order_history[-self.rnn_lookback:])])[1:]
+        self.p_state = np.vstack([self.p_state, self.demand_predictor.get_predicted_p(self.order_history[-self.rnn_lookback:])])[1:]
 
     def step(self, action):
         if isinstance(action, np.ndarray):
@@ -92,28 +92,32 @@ class DynamicProbEnv(object):
         num_acts = actions.shape[0]
         next_storage_maps, orders, exchange_costs = self._wrapped_env.vec_step(
             actions)
+        self.update_order_history(orders[0])
+        p_next = np.repeat(self.p_state.reshape(1,-1),num_acts,axis=0)
+
+        # Use true p value to calculate rewards/costs
         if self._wrapped_env.dynamic_order:
             p_hat = self._wrapped_env.long_term_2p[self._wrapped_env.season][np.newaxis,:]/2 # next period p_hat
         else:
             p_hat = self._wrapped_env.dist_param[np.newaxis,:] # next period p_hat
-    
         delay_costs_hat = ((self.discount/(1-self.discount)*(1-self.discount **
                                                              self.distance))*np.take_along_axis(p_hat,next_storage_maps-1,axis=-1)).sum(axis=1)
         costs_hat = delay_costs_hat + self.exchange_cost_weight*exchange_costs
         rewards_hat = -costs_hat
-        next_states = self.storage_map_to_state(next_storage_maps, np.zeros((num_acts, self.num_p_in_states*self.num_products)))
+
+        next_states = self.storage_map_to_state(next_storage_maps, p_next)
         return next_states, rewards_hat, delay_costs_hat
 
-    def vec_step(self, actions, p_next= None, freeze_age = False):
+    def vec_step(self, actions, p_next, no_orders = True):
         num_acts = actions.shape[0]
         next_storage_maps, orders, exchange_costs = self._wrapped_env.vec_step(
-            actions, freeze_age = freeze_age)
-        self.update_order_history(orders[0])
-        if p_next is None:
-            p_hat = self.p_state[np.newaxis,-1,:] # next period p_hat
-            p_next = np.repeat(self.p_state.reshape(1,-1),num_acts,axis=0)
-        else:
-            p_hat = p_next.reshape(-1,self.num_p_in_states, self.num_products)[:,-1,:]
+            actions, no_orders = no_orders)
+        # if p_next is None:
+        #     p_hat = self.p_state[np.newaxis,-1,:] # next period p_hat
+        #     p_next = np.repeat(self.p_state.reshape(1,-1),num_acts,axis=0)
+        # else:
+        #     p_hat = p_next.reshape(-1,self.num_p_in_states, self.num_products)[:,-1,:]
+        p_hat = p_next.reshape(-1,self.num_p_in_states, self.num_products)[:,-1,:]
         delay_costs_hat = ((self.discount/(1-self.discount)*(1-self.discount **
                                                              self.distance))*np.take_along_axis(p_hat,next_storage_maps-1,axis=-1)).sum(axis=1)
         costs_hat = delay_costs_hat + self.exchange_cost_weight*exchange_costs
@@ -148,6 +152,9 @@ class DynamicProbEnv(object):
     def state_to_storage_map(self, states):
         return (states.T[-self.num_products:].T.astype(int))
 
+    def state_to_p_state(self, states):
+        return states.T[:self.num_products*self.num_p_in_states].T
+
     def sample_states(self, batch_size):
         storage_maps = np.vstack(
             list(map(np.random.permutation, [self.num_products]*batch_size)))+1
@@ -155,7 +162,7 @@ class DynamicProbEnv(object):
         sampled_p = self.p_features_set[ind]
         p_current = sampled_p[:,:-1,:].reshape((batch_size,-1))
         p_next = sampled_p[:,1:,:].reshape((batch_size,-1))
-        return self.storage_map_to_state(storage_maps, p_current), p_next
+        return self.storage_map_to_state(storage_maps, p_current), p_current, p_next
 
     def sample_actions(self, num_acts, all=False):
         if all:
