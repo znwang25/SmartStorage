@@ -45,6 +45,11 @@ def main(args):
     #                         horizon=args.horizon,
     #                         look_ahead_type=args.policy_type,
     #                         num_acts=args.num_acts)
+    if args.dynamic_order:
+        last_max_path_length = args.last_max_path_length
+    else:
+        last_max_path_length = 10
+        
     algo = FunctionApproximateValueIteration(env,
                             value_fun,
                             policy,
@@ -55,7 +60,7 @@ def main(args):
                             num_rollouts = args.num_rollouts,
                             max_itr=args.max_iter,
                             log_itr=5,
-                            last_max_path_length=args.last_max_path_length)
+                            last_max_path_length=last_max_path_length)
     algo.train()
 
 
@@ -71,11 +76,11 @@ if __name__ == "__main__":
                         help='Maximum number of iterations for the value iteration algorithm')
     parser.add_argument("--logger_level", "-l", type=str, default='INFO', choices=["DEBUG", "INFO", "WARN", "ERROR", "DISABLED"],
                         help="Level of the logger to be print")
-    parser.add_argument("--storage_shape", "-s", type=str, default='(3, 3)',
+    parser.add_argument("--storage_shape", "-s", type=str, default='(2, 5)',
                         help="ASRSEnv storage shape")
     parser.add_argument("--exit_coord", "-e", type=str, default='None',
                         help="Coordinate of the exit, default is the origin")
-    parser.add_argument("--dist_param", "-prob", type=str, default='[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]',
+    parser.add_argument("--dist_param", "-prob", type=str, default='[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,0.95]',
                         help="ASRSEnv dist_param, the order probability")
     parser.add_argument("--num_rollouts", "-nr", type=int, default=10,
                         help="Number of rollouts used to evaluate policy")

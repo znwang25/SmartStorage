@@ -58,10 +58,16 @@ class ASRSEnv(gym.Env):
         self.num_actions = int(self.num_products * (self.num_products - 1) / 2 + 1)
         assert (origin_coord is None) or (len(storage_shape) == len(origin_coord)), "origin_coord does not have correct dimensions"
         if origin_coord:
-            self.origin_coord = origin_coord
+            if np.array(origin_coord).ndim == 2:
+                self.origin_coords = np.array(origin_coord)
+            else:
+                self.origin_coords = np.array(origin_coord)[np.newaxis]
         else:
-            self.origin_coord = np.zeros(len(storage_shape)).astype(int)
-            # Default is (0,0,0)
+            self.origin_coords = np.zeros((len(storage_shape),storage_shape[0])).astype(int)
+            self.origin_coords[0] = np.arange(storage_shape[0])
+            self.origin_coords = self.origin_coords.T
+            # np.zeros(len(storage_shape)).astype(int)
+            # Default is (:, 0, 0)
         self.dist_origin_to_exit = 1 # Distance from origin to exit
 
         self.num_distinct_season = 2
@@ -142,7 +148,11 @@ class ASRSEnv(gym.Env):
             coords = self.get_bin_coordinate(np.arange(self.num_products))
         else:
             coords = self.get_bin_coordinate(bin_id)
-        return self.get_distance_between_coord(coords,np.vstack(self.origin_coord)) + self.dist_origin_to_exit
+        
+        dist_to_each_exit = []
+        for origin in self.origin_coords:
+            dist_to_each_exit.append(self.get_distance_between_coord(coords,np.vstack(origin)) + self.dist_origin_to_exit)
+        return np.array(dist_to_each_exit).min(axis=0)
 
     def get_distance_between_coord(self, coord1, coord2):
         return np.abs(np.array(coord1)-np.array(coord2)).sum(axis=0)
@@ -241,7 +251,8 @@ class ASRSEnv(gym.Env):
                 number = current_map[ix,iy]
                 box = data[ix*self._scale:(ix+1)*self._scale,iy*self._scale:(iy+1)*self._scale,:3]
                 self.add_numbers_on_plot(number,box)
-        self.mark_exit_on_plot(data)
+        for origin_num in range(self.origin_coords.shape[0]):        
+            self.mark_exit_on_plot(data, origin_num)
         self._render = self._ax.imshow(data,animated=True)
         # self._render.set_data(data)
         if iteration is not None:
@@ -270,8 +281,8 @@ class ASRSEnv(gym.Env):
         p = 1-np.array(imageRGB)/255
         box[np.where(p==0)]= p[np.where(p==0)]
 
-    def mark_exit_on_plot(self, plot):
-        box = plot[self.origin_coord[0]*self._scale:(self.origin_coord[0]+1)*self._scale,self.origin_coord[1]*self._scale:(self.origin_coord[1]+1)*self._scale,:3]
+    def mark_exit_on_plot(self, plot, origin_num):
+        box = plot[self.origin_coords[origin_num][0]*self._scale:(self.origin_coords[origin_num][0]+1)*self._scale,self.origin_coords[origin_num][1]*self._scale:(self.origin_coords[origin_num][1]+1)*self._scale,:3]
         border = np.ones((self._scale,self._scale,3),dtype=bool)
         border[1:-1,1:-1,:] = False
         color = np.array([255, 215, 0])/255
@@ -285,6 +296,7 @@ class ASRSEnv(gym.Env):
 
 if __name__ == "__main__":
     a = ASRSEnv((2,3))
+    a.get_distance_to_exit()
     a.render()
     a.step((2,4))
 
