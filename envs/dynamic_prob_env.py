@@ -1,9 +1,8 @@
 import numpy as np
-from envs import ASRSEnv
 from collections.abc import Iterable
 import scipy.sparse as sparse
 import itertools
-from utils.utils import SparseArray
+from utils.utils import random_choice_noreplace, random_permutation
 import logger
 
 
@@ -56,11 +55,7 @@ class DynamicProbEnv(object):
         self.num_states = self.num_maps  # To be changed
         self.num_p_in_states = num_p_in_states
 
-        all_actions = list(itertools.combinations(
-            range(self.num_products), 2))+[None]
         self.num_actions = env.num_actions
-        self.id_to_action_dict = dict(
-            zip(range(self.num_actions), all_actions))
         self.vectorized = True
         self.rnn_lookback = demand_predictor.look_back
         self.order_history, _ = self._wrapped_env.get_order_sequence(num_period=demand_predictor.look_back+self.num_p_in_states)
@@ -76,16 +71,17 @@ class DynamicProbEnv(object):
         if isinstance(action, np.ndarray):
             action = action[0]
         next_storage_map, order, exchange_cost = self._wrapped_env.step(action)
+        p_next = self.p_state.reshape(-1)
         # Use true p value to calculate rewards/costs
         if self._wrapped_env.dynamic_order:
-            p = self._wrapped_env.order_process.long_term_2p[self._wrapped_env.order_process.season][np.newaxis,:]/2 # next period p
+            p = self._wrapped_env.order_process.long_term_2p[self._wrapped_env.order_process.season]/2 # next period p
         else:
-            p = self._wrapped_env.order_process.dist_param[np.newaxis,:] # next period p
+            p = self._wrapped_env.order_process.dist_param # next period p
 
         delay_cost = ((self.discount/(1-self.discount)*(1-self.discount **
                                                         self.distance))*p[next_storage_map-1]).sum()
         cost = delay_cost + self.exchange_cost_weight*exchange_cost
-        next_state = self.storage_map_to_state(next_storage_map)
+        next_state = self.storage_map_to_state(next_storage_map, p_next)
         reward = - cost
         return next_state, reward, delay_cost
 
@@ -164,8 +160,7 @@ class DynamicProbEnv(object):
         return states.T[:self.num_products*self.num_p_in_states].T
 
     def sample_states(self, batch_size):
-        storage_maps = np.vstack(
-            list(map(np.random.permutation, [self.num_products]*batch_size)))+1
+        storage_maps = random_permutation(range(1,self.num_products+1),batch_size)
         ind = np.random.choice(self.p_features_set.shape[0], batch_size, replace = True)
         sampled_p = self.p_features_set[ind]
         p_current = sampled_p[:,:-1,:].reshape((batch_size,-1))
@@ -174,19 +169,29 @@ class DynamicProbEnv(object):
 
     def sample_actions(self, num_acts, all=False):
         if all:
-            id_a_s = np.arange(self.num_actions)
+            actions = np.array(list(itertools.combinations(range(self.num_products), 2))+[None])
         else:
-            id_a_s = np.random.randint(0, self.num_actions, size=(num_acts,))
-        actions = np.array(list(map(self.get_action_from_id, id_a_s)))
+            actions = np.sort(random_choice_noreplace(range(self.num_products), n_sample=2 ,num_draw=num_acts-1),axis=-1)
+            actions = np.array(list(map(tuple,actions))+[None])
         return actions
 
-    def get_action_from_id(self, id_a):
-        """
-        Get action from id
-        :param id_a:
-        :return:
-        """
-        return self.id_to_action_dict[id_a]
+
+    def random_choice_noreplace(self, l, n_sample, num_draw):
+        '''
+        l: 1-D array or list
+        n_sample: sample size for each draw
+        num_draw: number of draws
+
+        Intuition: Randomly generate numbers, get the index of the smallest n_sample number for each row.
+        '''
+        l = np.array(l)
+        return l[np.argpartition(np.random.rand(num_draw,len(l)), n_sample-1,axis=-1)[:,:n_sample]]
+
+    def random_permutation(self, l, n_sample, num_draw):
+        # m, n are the number of rows, cols of output
+        l = np.array(l)
+        return l[np.random.rand(num_draw,len(l)).argsort(axis=-1)[:,:n_sample]]
+
 
     def upsample(self, image, scale):
         up_image = np.repeat(image, scale, axis=-2)
@@ -225,11 +230,12 @@ class DynamicProbEnv(object):
 
 
 if __name__ == '__main__':
-    a = ASRSEnv((3, 3))
-    a = ASRSEnv((2, 1, 1))
-    b = MapAsPicEnv(a)
-    print(b.step())
-    for i in range(10):
-        print(b.step())
-        if i % 2 == 0:
-            print(b.step((0, 5)))
+    from envs import ASRSEnv, StaticOrderProcess
+    from algos import TruePPredictor
+    op = StaticOrderProcess(num_products = 9) 
+    base_env = ASRSEnv((3, 3), op)
+    true_p = TruePPredictor(base_env, look_back=1000, dynamic=False, init_num_period = 1000, num_p_in_states =1)
+    env = DynamicProbEnv(base_env,demand_predictor = true_p, alpha=1, num_p_in_states = 1)
+    env.sample_actions(5)
+    env.sample_states(5)
+    print(env.step(None))

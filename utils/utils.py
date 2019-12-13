@@ -3,6 +3,23 @@ import time
 from collections.abc import Iterable
 from gym import spaces, Env
 
+def random_choice_noreplace(l, n_sample, num_draw):
+    '''
+    l: 1-D array or list
+    n_sample: sample size for each draw
+    num_draw: number of draws
+
+    Intuition: Randomly generate numbers, get the index of the smallest n_sample number for each row.
+    '''
+    l = np.array(l)
+    return l[np.argpartition(np.random.rand(num_draw,len(l)), n_sample-1,axis=-1)[:,:n_sample]]
+
+def random_permutation(l, num_draw):
+    # m, n are the number of rows, cols of output
+    l = np.array(l)
+    return l[np.random.rand(num_draw,len(l)).argsort(axis=-1)]
+
+
 class RandomPolicy(object):
     def __init__(self, env):
         self.num_products = env.num_products
