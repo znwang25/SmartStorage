@@ -119,7 +119,7 @@ class TruePPredictor(object):
 
     def get_predicted_p(self, features_set,preprocess = False):
         if self.dynamic:
-            self.buffer_p_sequence_hat = np.vstack([self.buffer_p_sequence_hat, self._env.dist_param])[1:]
+            self.buffer_p_sequence_hat = np.vstack([self.buffer_p_sequence_hat, self._env.order_process.dist_param])[1:]
         if preprocess:
             return self.buffer_p_sequence_hat[-self.num_p_in_states:]
         return self.buffer_p_sequence_hat[-1]

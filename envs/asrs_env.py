@@ -1,16 +1,14 @@
 ﻿import math
-import gym
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from gym.utils import seeding
 import numpy as np
 import time
 from PIL import ImageDraw,Image,ImageFont
 import logger
 
 
-class ASRSEnv(gym.Env):
+class ASRSEnv(object):
 
     """
     Description:
@@ -48,8 +46,10 @@ class ASRSEnv(gym.Env):
         'video.frames_per_second': 30
     }
 
-    def __init__(self, storage_shape, dist_param=None, dynamic_order = False, season_length = 500, origin_coord=None, beta=0.8, rho=0.99, seed=42):
-        self.seed(seed)
+    def __init__(self, storage_shape, order_process, origin_coord=None, seed=42):
+        self.order_process = order_process
+        self.map_random = np.random.RandomState()
+        self.set_seed(seed)
         assert len(storage_shape) <= 3, "storage_shape length should be <= 3"
         self.storage_shape = storage_shape
         self.obs_dim = 1
@@ -70,26 +70,10 @@ class ASRSEnv(gym.Env):
             # Default is (:, 0, 0)
         self.dist_origin_to_exit = 1 # Distance from origin to exit
 
-        self.num_distinct_season = 2
-        self.season_length = season_length
-        # self.long_term_2p = np.random.rand(self.num_distinct_season, self.num_products)
-        self.long_term_2p = np.array([[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95],
-                                     [0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]])*2
-        if dynamic_order: 
-            self.dist_param = self.long_term_2p[0]/2
-        elif dist_param:
-            self.dist_param = np.array(dist_param)
-        else:
-            self.dist_param = np.array([0.05]*self.num_products)
+        assert order_process.num_products == self.num_products, "Number of products in order process need to match number of storage bins"
 
-        self.dynamic_order = dynamic_order
-        self.init_dist_param = self.dist_param
-        self.age = 0
-        self.beta = beta
-        self.rho = rho
-
+        self.dynamic_order = order_process.dynamic_order
         self.reset()
-
 
         self._fig = None
         # self.cmap = matplotlib.cm.get_cmap('Spectral')
@@ -99,33 +83,29 @@ class ASRSEnv(gym.Env):
         self.vectorized = True
         self.__name__ = 'ASRSEnv'
 
-    def seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return seed
+    def set_seed(self, seed=None):
+        if seed:
+            self.seed_num = seed
+            self.order_process.set_seed(self.seed_num+1000)
+        self.map_random.seed(self.seed_num+100)
 
     def reset(self):
+        self.set_seed()
         self._storage_maps = None
         self._num_envs = None
-        self.age = 0
-        if self.dynamic_order: 
-            self.dist_param = self.long_term_2p[0]/2
-        else:
-            self.dist_param = np.array(self.init_dist_param)
-        self.storage_map = np.random.permutation(self.num_products)+1
+        self.order_process.reset()
+        self.storage_map = self.map_random.permutation(self.num_products)+1
         return np.array(self.storage_map).copy()
 
     def vec_reset(self, num_envs=None):
+        self.set_seed()
+        self.order_process.reset()
         if num_envs is None:
             assert self._num_envs is not None
             num_envs = self._num_envs
         else:
             self._num_envs = num_envs
-        self._storage_maps = np.vstack(list(map(np.random.permutation,[self.num_products]*num_envs)))+1
-        self.age = 0
-        if self.dynamic_order: 
-            self.dist_param = self.long_term_2p[0]/2
-        else:
-            self.dist_param = np.array(self.init_dist_param)
+        self._storage_maps = np.vstack(list(map(self.map_random.permutation,[self.num_products]*num_envs)))+1
         return np.array(self._storage_maps).copy()
 
     def get_bin_coordinate(self,bin_id):
@@ -157,30 +137,17 @@ class ASRSEnv(gym.Env):
     def get_distance_between_coord(self, coord1, coord2):
         return np.abs(np.array(coord1)-np.array(coord2)).sum(axis=0)
 
-    def get_orders(self, num_envs=1):
-        if self.dynamic_order:
-            self.season = (self.age // self.season_length) % self.num_distinct_season
-            self.dist_param = self.beta * self.long_term_2p[self.season]/2 + (1-self.beta) * (self.rho * self.dist_param + \
-                (1 - self.rho) * self.long_term_2p[self.season] * \
-                np.random.rand(self.num_products,))
-            self.age += 1
-            # print(f'Dynamic p: {self.dist_param}')
-        order = np.random.binomial(1, self.dist_param)
-        if num_envs != 1:
-            order = np.repeat(order, num_envs).reshape((self.num_products, num_envs)).T
-        return order
-
     def get_order_sequence(self, num_period=1):
         # Can only generate order sequences for 1 environments
         order_sequence = np.zeros((num_period, self.num_products))
         p_sequence = np.zeros((num_period, self.num_products))
         for t in range(num_period):
-            order = self.get_orders(num_envs=1)
+            order = self.order_process.get_orders(num_envs=1)
             order_sequence[t] = order
-            p_sequence[t] = self.dist_param
+            p_sequence[t] = self.order_process.dist_param
         return order_sequence, p_sequence
 
-    def step(self, action=None):
+    def step(self, action=None, rollout = True):
         '''
         Action should be a tuple (x, y), which indicates that good in bin number x and bin number y should switch.
         '''
@@ -188,7 +155,10 @@ class ASRSEnv(gym.Env):
 
         storage_map = self.storage_map
         exchange_cost = 0
-        order = self.get_orders()
+        if rollout:
+            order = self.order_process.get_orders()
+        else:
+            order = None
         if (action is not None):
             storage_map[action[0]], storage_map[action[1]] = storage_map[action[1]], storage_map[action[0]]
             exchange_cost += self.get_distance_between_coord(self.get_bin_coordinate(action[0]), self.get_bin_coordinate(action[1]))
@@ -196,14 +166,14 @@ class ASRSEnv(gym.Env):
         return self.storage_map.copy(), order, exchange_cost
 
 
-    def vec_step(self, actions, no_orders = False):
+    def vec_step(self, actions, rollout = True):
         # actions is a list of length n either 2-tuple or None
         assert np.array(list(map((lambda action: action is None or (action[0] < action[1] and action[1] < self.num_products and action[0] > -1)), actions))).all()
         assert self._storage_maps is not None
         actions = np.array([action if action is not None else (0, 0) for action in actions])
         self._storage_maps = self.vec_next_storage(self._storage_maps, actions)
-        if not no_orders:
-            orders = self.get_orders(num_envs=self._num_envs)
+        if rollout:
+            orders = self.order_process.get_orders(num_envs=self._num_envs)
         else:
             orders = None
         exchange_costs = self.get_distance_between_coord(self.get_bin_coordinate(actions[:,0]), self.get_bin_coordinate(actions[:,1]))
@@ -242,10 +212,11 @@ class ASRSEnv(gym.Env):
             current_map = self._storage_maps[0].reshape(self.storage_shape)
         else:
             current_map = self.storage_map.reshape(self.storage_shape)
-        if self.dynamic_order:
-            data = self.cmap((self.long_term_2p[self.season]/2)[current_map-1])
-        else:
-            data = self.cmap(self.dist_param[current_map-1]) 
+        # if self.dynamic_order:
+        #     data = self.cmap((self.long_term_2p[self.season]/2)[current_map-1])
+        # else:
+        #     data = self.cmap(self.order_process.dist_param[current_map-1]) 
+        data = self.cmap(self.order_process.dist_param[current_map-1]) 
         data = self.upsample(data,self._scale) 
         for ix,iy in np.ndindex(self.storage_shape):
                 number = current_map[ix,iy]
@@ -256,7 +227,7 @@ class ASRSEnv(gym.Env):
         self._render = self._ax.imshow(data,animated=True)
         # self._render.set_data(data)
         if iteration is not None:
-            self._ax.set_title('Iteration %d, time %d' % (iteration, self.age))
+            self._ax.set_title('Iteration %d, time %d' % (iteration, self.order_process.age))
         self._canvas.draw()
         self._canvas.flush_events()
         time.sleep(self.dt)
@@ -265,6 +236,9 @@ class ASRSEnv(gym.Env):
             width, height = self._fig.get_size_inches() * self._fig.get_dpi()
             image = np.fromstring(self._canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
             return image
+        if mode == 'human':
+            s, (width, height) = self._canvas.print_to_buffer()
+            plt.imshow(np.fromstring(s,dtype='uint8').reshape(int(height), int(width), 4))     
 
     def upsample(self, image, scale):
         up_image = np.repeat(image, scale, axis=0)
@@ -293,6 +267,7 @@ class ASRSEnv(gym.Env):
     def close(self):
         plt.close()
         self._fig = None
+
 
 if __name__ == "__main__":
     a = ASRSEnv((2,3))

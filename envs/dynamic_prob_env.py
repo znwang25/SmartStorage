@@ -102,9 +102,9 @@ class DynamicProbEnv(object):
 
         # Use true p value to calculate rewards/costs
         if self._wrapped_env.dynamic_order:
-            p_hat = self._wrapped_env.long_term_2p[self._wrapped_env.season][np.newaxis,:]/2 # next period p_hat
+            p_hat = self._wrapped_env.order_process.long_term_2p[self._wrapped_env.order_process.season][np.newaxis,:]/2 # next period p_hat
         else:
-            p_hat = self._wrapped_env.dist_param[np.newaxis,:] # next period p_hat
+            p_hat = self._wrapped_env.order_process.dist_param[np.newaxis,:] # next period p_hat
         delay_costs_hat = ((self.discount/(1-self.discount)*(1-self.discount **
                                                              self.distance))*np.take_along_axis(p_hat,next_storage_maps-1,axis=-1)).sum(axis=1)
         costs_hat = delay_costs_hat + self.exchange_cost_weight*exchange_costs
@@ -113,10 +113,10 @@ class DynamicProbEnv(object):
         next_states = self.storage_map_to_state(next_storage_maps, p_next)
         return next_states, rewards_hat, delay_costs_hat
 
-    def vec_step(self, actions, p_next, no_orders = True):
+    def vec_step(self, actions, p_next, rollout = False):
         num_acts = actions.shape[0]
         next_storage_maps, orders, exchange_costs = self._wrapped_env.vec_step(
-            actions, no_orders = no_orders)
+            actions, rollout = rollout)
         # if p_next is None:
         #     p_hat = self.p_state[np.newaxis,-1,:] # next period p_hat
         #     p_next = np.repeat(self.p_state.reshape(1,-1),num_acts,axis=0)

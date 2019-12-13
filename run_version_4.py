@@ -16,10 +16,16 @@ def main(args):
     from utils.utils import TabularPolicy, TabularValueFun, LookAheadPolicy, SimpleMaxPolicy
     from utils.value_function import CNNValueFun, FFNNValueFun
     from algos import FunctionApproximateValueIteration, RNNDemandPredictor, TruePPredictor
-    from envs import ASRSEnv, ProbDistEnv, DynamicProbEnv
+    from envs import ASRSEnv, ProbDistEnv, DynamicProbEnv, StaticOrderProcess, SeasonalOrderProcess
 
-    assert np.array(eval(args.storage_shape)).prod() == len(eval(args.dist_param)), 'storage_shape should be consistent with dist_param length'
-    base_env = ASRSEnv(eval(args.storage_shape), origin_coord=eval(args.exit_coord), dist_param = eval(args.dist_param),dynamic_order = args.dynamic_order, season_length = 500, beta=1, rho=0.99)
+    num_products = np.array(eval(args.storage_shape)).prod()
+    assert (eval(args.dist_param) is None) or (num_products == len(eval(args.dist_param))), 'storage_shape should be consistent with dist_param length'
+    if args.dynamic_order:
+        op = SeasonalOrderProcess(num_products = num_products, dist_param = eval(args.dist_param),season_length = 500, beta=1, rho=0.99)
+    else:
+        op = StaticOrderProcess(num_products = num_products, dist_param = eval(args.dist_param)) 
+
+    base_env = ASRSEnv(eval(args.storage_shape), order_process = op, origin_coord=eval(args.exit_coord))
     if args.true_p:
         true_p = TruePPredictor(base_env, look_back=args.rnn_lookback, dynamic=args.dynamic_order, init_num_period = args.rnn_init_num_period, num_p_in_states = args.num_p_in_states)
         env = DynamicProbEnv(base_env,demand_predictor = true_p, alpha=1, num_p_in_states = args.num_p_in_states)

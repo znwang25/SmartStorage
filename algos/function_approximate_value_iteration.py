@@ -59,7 +59,6 @@ class FunctionApproximateValueIteration(object):
         self.log_itr = log_itr
         self.num_rollouts = num_rollouts
         self.batch_size = batch_size
-        self.num_acts = self.env.action_space.n if isinstance(env.action_space, spaces.Discrete) else num_acts
         self.num_acts = self.env.num_actions
         self.render_itr = render_itr
         self.render = render
@@ -135,5 +134,5 @@ class FunctionApproximateValueIteration(object):
         p_current = np.tile(p_current.T, num_acts).T 
         p_next = np.tile(p_next.T, num_acts).T 
         self.env.vec_set_state(states)
-        next_states, rewards, delay_costs = self.env.vec_step(actions, p_next,no_orders=True)
+        next_states, rewards, delay_costs = self.env.vec_step(actions, p_next,rollout=False)
         return states, next_states, rewards
