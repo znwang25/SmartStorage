@@ -27,7 +27,7 @@ def main(args):
 
     base_env = ASRSEnv(eval(args.storage_shape), order_process = op, origin_coord=eval(args.exit_coord))
     if args.true_p:
-        true_p = TruePPredictor(base_env, look_back=args.rnn_lookback, dynamic=args.dynamic_order, init_num_period = args.rnn_init_num_period, num_p_in_states = args.num_p_in_states)
+        true_p = TruePPredictor(base_env, look_back=10, dynamic=args.dynamic_order, init_num_period = args.rnn_init_num_period, num_p_in_states = args.num_p_in_states)
         env = DynamicProbEnv(base_env,demand_predictor = true_p, alpha=1, num_p_in_states = args.num_p_in_states)
     else:
         rnn = RNNDemandPredictor(base_env,look_back=args.rnn_lookback, init_num_period = args.rnn_init_num_period, epochs = args.rnn_epoch)
@@ -45,7 +45,8 @@ def main(args):
     value_fun = FFNNValueFun(env)
     policy = SimpleMaxPolicy(env,
                             value_fun,
-                            num_acts = args.num_acts)
+                            num_acts = args.num_acts,
+                            all_actions= args.all_actions)
     # policy = LookAheadPolicy(env,
     #                         value_fun,
     #                         horizon=args.horizon,
@@ -62,6 +63,7 @@ def main(args):
                             learning_rate=args.learning_rate,
                             batch_size=args.batch_size,
                             num_acts=args.num_acts,
+                            all_actions= args.all_actions,
                             render=render,
                             num_rollouts = args.num_rollouts,
                             max_itr=args.max_iter,
@@ -94,8 +96,10 @@ if __name__ == "__main__":
                         help='Learning rate for training the value function')
     parser.add_argument("--batch_size", "-bs", type=int, default=256,
                         help='batch size for training the value function')
-    parser.add_argument("--num_acts", "-a", type=int, default=10,
+    parser.add_argument("--num_acts", "-a", type=int, default=50,
                         help='Number of actions sampled for maximizing the value function')
+    parser.add_argument("--all_actions", "-all_a",  action='store_true',
+                        help='Sample all the actions')
     parser.add_argument("--rnn_lookback", type=int, default=1000,
                         help='Number of period lookback for RNN training')
     parser.add_argument("--rnn_init_num_period", type=int, default=10000,

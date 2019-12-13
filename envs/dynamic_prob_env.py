@@ -48,9 +48,6 @@ class DynamicProbEnv(object):
         self.discount = discount
         self.distance = env.get_distance_to_exit()
         self.max_distance = self.distance.max()
-        self.dist_matrix = np.array(list(map(lambda x, y: env.get_distance_between_coord(env.get_bin_coordinate(x), env.get_bin_coordinate(y)),
-                                             *np.meshgrid(range(self.num_products), range(self.num_products)))))
-
         self.num_maps = env.num_maps
         self.num_states = self.num_maps  # To be changed
         self.num_p_in_states = num_p_in_states
@@ -58,10 +55,12 @@ class DynamicProbEnv(object):
         self.num_actions = env.num_actions
         self.vectorized = True
         self.rnn_lookback = demand_predictor.look_back
+        logger.info("Getting order_history")
         self.order_history, _ = self._wrapped_env.get_order_sequence(num_period=demand_predictor.look_back+self.num_p_in_states)
         self.p_state = self.demand_predictor.get_predicted_p(self.order_history, preprocess = True)
         self.p_features_set = self.demand_predictor.sliding_window(self.demand_predictor.buffer_p_sequence_hat,self.num_p_in_states+1)
         self.p_state_init = self.p_state # The p value to reset to.
+        logger.info("Finished env set up")
 
     def update_order_history(self, order):
         self.order_history = np.vstack([self.order_history, order])[1:]
@@ -169,7 +168,9 @@ class DynamicProbEnv(object):
 
     def sample_actions(self, num_acts, all=False):
         if all:
-            actions = np.array(list(itertools.combinations(range(self.num_products), 2))+[None])
+            if not hasattr(self, '_all_actions'):
+                self._all_actions = np.array(list(itertools.combinations(range(self.num_products), 2))+[None])
+            actions = self._all_actions
         else:
             actions = np.sort(random_choice_noreplace(range(self.num_products), n_sample=2 ,num_draw=num_acts-1),axis=-1)
             actions = np.array(list(map(tuple,actions))+[None])

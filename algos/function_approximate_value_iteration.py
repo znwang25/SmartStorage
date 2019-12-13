@@ -43,6 +43,7 @@ class FunctionApproximateValueIteration(object):
                  policy,
                  batch_size,
                  num_acts,
+                 all_actions = False,
                  learning_rate=0.1,
                  max_itr=2500,
                  log_itr=2,
@@ -59,7 +60,15 @@ class FunctionApproximateValueIteration(object):
         self.log_itr = log_itr
         self.num_rollouts = num_rollouts
         self.batch_size = batch_size
-        self.num_acts = self.env.num_actions
+        if all_actions:
+            self.all_actions = True
+            self.num_acts = env.num_actions
+        elif num_acts >= env.num_actions:
+            self.all_actions = True
+            self.num_acts = env.num_actions
+        else:
+            self.all_actions = False
+            self.num_acts = num_acts            
         self.render_itr = render_itr
         self.render = render
         self.last_max_path_length = last_max_path_length
@@ -125,9 +134,10 @@ class FunctionApproximateValueIteration(object):
         self.value_fun.update(states_distinct,V_bar)
 
     def get_states_and_transitions(self):
+        logger.info("Sampling states and actions")
         num_acts, num_states = self.num_acts, self.batch_size
         states, p_current, p_next = self.env.sample_states(num_states)
-        actions = self.env.sample_actions(num_acts, all=True)
+        actions = self.env.sample_actions(num_acts, all=self.all_actions)
 
         states = np.tile(states.T, num_acts).T
         actions = np.repeat(actions, num_states, axis=0)

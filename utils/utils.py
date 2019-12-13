@@ -29,12 +29,20 @@ class RandomPolicy(object):
         return action
 
 class SimpleMaxPolicy(object):
-    def __init__(self, env, value_fun, num_acts):
+    def __init__(self, env, value_fun, num_acts, all_actions = False):
         self.env = env
         self.discount = env.discount
         self.num_products = env.num_products
         self._value_fun = value_fun
-        self.num_acts = env.num_actions
+        if all_actions:
+            self.all_actions = True
+            self.num_acts = env.num_actions
+        elif num_acts >= env.num_actions:
+            self.all_actions = True
+            self.num_acts = env.num_actions
+        else:
+            self.all_actions = False
+            self.num_acts = num_acts            
 
     def get_action(self, state):
         if state.ndim ==self.env.obs_dim:
@@ -45,7 +53,7 @@ class SimpleMaxPolicy(object):
             states = np.tile(state.T, self.num_acts).T
         else:
             raise NotImplementedError
-        actions = self.env.sample_actions(self.num_acts, all=True)
+        actions = self.env.sample_actions(self.num_acts, all=self.all_actions)
         rep_actions = np.repeat(actions, num_states, axis=0)
         total_rewards = np.zeros(self.num_acts*num_states)
         self.env.vec_set_state(states)
