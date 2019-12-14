@@ -11,7 +11,8 @@ def main(args):
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
-    from utils.utils import TabularPolicy, TabularValueFun
+    from utils.utils import TabularPolicy
+    from utils.value_function import TabularValueFun
     from algos.tabular_value_iteration import ValueIteration
     from envs import ASRSEnv, TabularEnv, ProbDistEnv, DynamicProbEnv, StaticOrderProcess, SeasonalOrderProcess
 
@@ -40,6 +41,7 @@ def main(args):
                           temperature=args.temperature,
                           num_rollouts = args.num_rollouts)
     algo.train()
+    value_fun.save(f'{exp_dir}/value_fun.npy')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

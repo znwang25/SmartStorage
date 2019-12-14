@@ -13,8 +13,8 @@ def main(args):
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
-    from utils.utils import TabularPolicy, TabularValueFun, LookAheadPolicy, SimpleMaxPolicy
-    from utils.value_function import CNNValueFun, FFNNValueFun
+    from utils.utils import TabularPolicy, LookAheadPolicy, SimpleMaxPolicy
+    from utils.value_function import CNNValueFun, FFNNValueFun, TabularValueFun
     from algos import FunctionApproximateValueIteration, RNNDemandPredictor, TruePPredictor
     from envs import ASRSEnv, ProbDistEnv, DynamicProbEnv, StaticOrderProcess, SeasonalOrderProcess
 
@@ -34,13 +34,15 @@ def main(args):
         env = DynamicProbEnv(base_env,demand_predictor = rnn, alpha=1, num_p_in_states = args.num_p_in_states)
 
     env_name = env.__name__
-    exp_dir = os.getcwd() + '/data/version4/%s/policy_type%s_envsize_%s_dynamic_%s_p_hat_%s_%s/' % (env_name, args.policy_type,np.array(eval(args.storage_shape)).prod(), args.dynamic_order, not args.true_p, args.exp_name)
+    # exp_dir = os.getcwd() + '/data/version4/%s/policy_type%s_envsize_%s_dynamic_%s_p_hat_%s_%s/' % (env_name, args.policy_type,np.array(eval(args.storage_shape)).prod(), args.dynamic_order, not args.true_p, args.exp_name)
+    exp_dir = os.getcwd() + '/data/report/%s/policy_type%s_envsize_%s_dynamic_%s_p_hat_%s_%s/' % (env_name, args.policy_type,np.array(eval(args.storage_shape)).prod(), args.dynamic_order, not args.true_p, args.exp_name)
     logger.configure(dir=exp_dir, format_strs=['stdout', 'log', 'csv'], level=eval(args.logger_level))
     args_dict = vars(args)
     args_dict['env'] = env_name
     json.dump(vars(args), open(exp_dir + '/params.json', 'w'), indent=2, sort_keys=True)
     if not args.true_p:
         rnn.test_performance_plot(2000, save_to=exp_dir)
+        rnn.save(f'{exp_dir}/rnn_model.h5')
 
     value_fun = FFNNValueFun(env)
     policy = SimpleMaxPolicy(env,
@@ -55,7 +57,7 @@ def main(args):
     if args.dynamic_order:
         last_max_path_length = args.last_max_path_length
     else:
-        last_max_path_length = 10
+        last_max_path_length = args.max_path_length
         
     algo = FunctionApproximateValueIteration(env,
                             value_fun,
@@ -68,9 +70,11 @@ def main(args):
                             num_rollouts = args.num_rollouts,
                             max_itr=args.max_iter,
                             log_itr=5,
-                            last_max_path_length=last_max_path_length)
+                            max_path_length=args.max_path_length,
+                            last_max_path_length=last_max_path_length
+                            )
     algo.train()
-
+    value_fun.save(f'{exp_dir}/value_fun.h5')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -104,7 +108,9 @@ if __name__ == "__main__":
                         help='Number of period lookback for RNN training')
     parser.add_argument("--rnn_init_num_period", type=int, default=10000,
                         help='Number of initial period used to train RNN')
-    parser.add_argument("--last_max_path_length", "-lmp", type=int, default=600,
+    parser.add_argument("--max_path_length", "-mp", type=int, default=10,                       
+                        help='Number of period used for rollout')
+    parser.add_argument("--last_max_path_length", "-lmp", type=int, default=10,
                         help='Number of period used for final video')
     parser.add_argument("--rnn_epoch", type=int, default=2,
                         help='Number of epoch used to train RNN')

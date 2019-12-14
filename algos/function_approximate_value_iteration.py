@@ -50,6 +50,7 @@ class FunctionApproximateValueIteration(object):
                  render_itr=25,
                  num_rollouts=10,
                  render=True,
+                 max_path_length = 10,
                  last_max_path_length = 600
                  ):
         self.env = env
@@ -71,6 +72,7 @@ class FunctionApproximateValueIteration(object):
             self.num_acts = num_acts            
         self.render_itr = render_itr
         self.render = render
+        self.max_path_length = max_path_length
         self.last_max_path_length = last_max_path_length
 
     def train(self):
@@ -86,7 +88,7 @@ class FunctionApproximateValueIteration(object):
             log = itr % self.log_itr == 0 or itr == self.max_itr - 1
             render = (itr % self.render_itr == 0) and self.render
             if log:
-                average_return, avg_delay_cost, video = rollout(self.env, self.policy, num_rollouts=self.num_rollouts, render=render, iteration=itr)
+                average_return, avg_delay_cost, video = rollout(self.env, self.policy, num_rollouts=self.num_rollouts, render=render, iteration=itr, max_path_length= self.max_path_length)
                 if render:
                     # contour, fig = plot_contour(self.env, self.value_fun, fig=fig, iteration=itr)
                     # contours += [contour]

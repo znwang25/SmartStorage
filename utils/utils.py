@@ -28,6 +28,20 @@ class RandomPolicy(object):
         action = np.random.choice(self.num_products,2,replace=False)
         return action
 
+class DoNothingPolicy(object):
+    def __init__(self, env):
+        self.env = env
+
+    def get_action(self, state):
+        if state.ndim ==self.env.obs_dim:
+            num_states = 1
+            return None
+        elif state.ndim == self.env.obs_dim +1:
+            num_states = state.shape[0]
+            return np.array([None]*num_states)
+        else:
+            raise NotImplementedError
+
 class SimpleMaxPolicy(object):
     def __init__(self, env, value_fun, num_acts, all_actions = False):
         self.env = env
@@ -104,20 +118,6 @@ class TabularPolicy(object):
         else:
             raise TypeError
 
-
-class TabularValueFun(object):
-    def __init__(self, env):
-        self.num_states = env.num_states
-        self._value_fun = np.zeros(shape=(self.num_states,))
-
-    def get_values(self, states=None):
-        if states is None:
-            return self._value_fun
-        else:
-            return self._value_fun[states]
-
-    def update(self, values):
-        self._value_fun = values
 
 class LookAheadPolicy(object):
     """

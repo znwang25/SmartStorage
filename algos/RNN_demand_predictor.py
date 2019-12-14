@@ -86,6 +86,12 @@ class RNNDemandPredictor(object):
         else:
             plt.show()
 
+    def save(self, filepath):
+        self.model.save(filepath)
+
+    def load(self, filepath):
+        self.model = load_model(filepath)
+
 
 if __name__ == "__main__":
     from envs import ASRSEnv

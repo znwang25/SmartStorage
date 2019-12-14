@@ -13,8 +13,8 @@ def main(args):
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
-    from utils.utils import TabularPolicy, TabularValueFun, LookAheadPolicy, SimpleMaxPolicy
-    from utils.value_function import CNNValueFun, FFNNValueFun
+    from utils.utils import TabularPolicy, LookAheadPolicy, SimpleMaxPolicy
+    from utils.value_function import CNNValueFun, FFNNValueFun, TabularValueFun
     from algos.function_approximate_value_iteration import FunctionApproximateValueIteration
     from envs import ASRSEnv, ProbDistEnv
 

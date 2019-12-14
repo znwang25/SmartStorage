@@ -1,8 +1,29 @@
 ﻿import keras
-from keras.models import Sequential
+from keras.models import Sequential, load_model
 from keras.layers import Dense, Conv2D, Flatten
 import autograd.numpy as np
 from collections import OrderedDict
+
+
+class TabularValueFun(object):
+    def __init__(self, env):
+        self.num_states = env.num_states
+        self._value_fun = np.zeros(shape=(self.num_states,))
+
+    def get_values(self, states=None):
+        if states is None:
+            return self._value_fun
+        else:
+            return self._value_fun[states]
+
+    def update(self, values):
+        self._value_fun = values
+    
+    def save(self, filepath):
+        np.save(filepath,self._value_fun)
+
+    def load(self, filepath):
+        self._value_fun = np.load(filepath)
 
 class CNNValueFun(object):
     def __init__(self, env, activation='relu'):
@@ -53,6 +74,14 @@ class FFNNValueFun(object):
     def update(self, states, V_bar):
         # loss = self.model.train_on_batch(states, V_bar,reset_metrics=False)
         loss = self.model.fit(states, V_bar, verbose=0)
+
+    def save(self, filepath):
+        self.model.save(filepath)
+
+    def load(self, filepath):
+        self.model = load_model(filepath)
+
+
 
 class MLPValueFun(object):
     _activations = {
