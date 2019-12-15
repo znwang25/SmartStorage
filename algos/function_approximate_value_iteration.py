@@ -5,6 +5,7 @@ import logger
 import numpy as np
 import moviepy.editor as mpy
 import matplotlib.pyplot as plt
+import time
 
 
 class FunctionApproximateValueIteration(object):
@@ -83,12 +84,15 @@ class FunctionApproximateValueIteration(object):
         delay_cs = []
         fig = None
         for itr in range(self.max_itr):
+            itr_starttime = time.time()
             self.value_fun_update()
-
+            itr_time = time.time() - itr_starttime
             log = itr % self.log_itr == 0 or itr == self.max_itr - 1
             render = (itr % self.render_itr == 0) and self.render
             if log:
+                rollout_starttime = time.time()
                 average_return, avg_delay_cost, video = rollout(self.env, self.policy, num_rollouts=self.num_rollouts, render=render, iteration=itr, max_path_length= self.max_path_length)
+                rollout_time = time.time() - rollout_starttime
                 if render:
                     # contour, fig = plot_contour(self.env, self.value_fun, fig=fig, iteration=itr)
                     # contours += [contour]
@@ -98,6 +102,8 @@ class FunctionApproximateValueIteration(object):
                 logger.logkv('Iteration', itr)
                 logger.logkv('Average Returns', average_return)
                 logger.logkv('Average Delayed Costs', avg_delay_cost)
+                logger.logkv('Iteration Time', itr_time)
+                logger.logkv('Policy Rollout Time', rollout_time)
                 logger.dumpkvs()
 
         plot_returns(returns)
